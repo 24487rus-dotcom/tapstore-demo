@@ -3,6 +3,12 @@ const storageKey = 'tapstore-public-demo-v1';
 const today = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const roles = {owner:'Владелец',seller:'Сотрудник',buyer:'Покупатель'};
 const accountFor = role => ({email:role+'@demo.example',role,slug:role === 'buyer' ? null : 'demo',enabled:1,can_edit_prices:1});
+function navigateDemo(hash) {
+  const target = new URL(location.href);
+  target.hash = hash;
+  if(target.href === location.href) location.reload();
+  else location.href = target.href;
+}
 function seed() {
   const created = new Date().toISOString();
   return {stores:[{slug:'demo',name:'Хмельная лавка · демо',address:'Самара, ул. Демонстрационная, 12',published:1}],
@@ -169,7 +175,7 @@ export function setupDemo() {
   for(const [role,label] of Object.entries(roles)) {
     const button=document.createElement('button');button.textContent=label;button.type='button';
     button.className=sessionStorage.getItem('tapstore-demo-role') === role ? '' : 'secondary';
-    button.addEventListener('click',() => {sessionStorage.setItem('tapstore-demo-role',role);sessionStorage.removeItem('tapstore-demo-email');location.href=DEMO_BASE+'#/'+(role === 'buyer' ? 'shop/demo' : 'manage');location.reload();});
+    button.addEventListener('click',() => {sessionStorage.setItem('tapstore-demo-role',role);sessionStorage.removeItem('tapstore-demo-email');navigateDemo('/'+(role === 'buyer' ? 'shop/demo' : 'manage'));});
     panel.querySelector('#demo-roles').append(button);
   }
   const resetButton = panel.querySelector('#reset-demo');
@@ -180,7 +186,7 @@ export function setupDemo() {
       resetButton.textContent = 'Подтвердить сброс демо';
       return;
     }
-    save(seed());location.href=DEMO_BASE+'#/shop/demo';location.reload();
+    save(seed());navigateDemo('/shop/demo');
   });
   document.querySelector('main').prepend(panel);
   window.addEventListener('hashchange',() => location.reload());
@@ -199,7 +205,7 @@ export function setupDemo() {
   document.addEventListener('submit',event => {
     const form=event.target;
     if(form.getAttribute('action') === '/manage') {
-      event.preventDefault();location.href=DEMO_BASE+'#/manage?'+new URLSearchParams(new FormData(form));location.reload();
+      event.preventDefault();navigateDemo('/manage?'+new URLSearchParams(new FormData(form)));
     }
   },true);
 }

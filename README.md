@@ -4,6 +4,12 @@
 
 Русскоязычная демонстрация конструктора витрин для магазинов с самовывозом.
 
+## English demo
+
+[Open English demo in USD](https://24487rus-dotcom.github.io/tapstore-demo/?lang=en&currency=USD#/shop/demo)
+
+Choose English or Russian and RUB, USD or EUR. Demo display rates are illustrative: 1 USD = 100 RUB; 1 EUR = 110 RUB. Base product prices and manual entries are entered in RUB.
+
 ## Как попробовать
 
 1. Добавьте товар в корзину, укажите имя и оформите тестовую заявку.

@@ -1,11 +1,13 @@
 const DEMO_BASE = new URL('.',import.meta.url).pathname;
-function demoNavigate(url) { location.href = DEMO_BASE+'#'+url; location.reload(); }
+function demoNavigate(url) { const target = new URL(location.href); target.hash = url; if (target.href === location.href) location.reload(); else location.href = target.href; }
+import {displayMoney,demoLocale,translate,setupI18n} from './i18n.js';
 import {demoApi,setupDemo} from './state.js';
 setupDemo();
+setupI18n();
 const page = document.querySelector('#page');
 const notice = document.querySelector('#notice');
 const escape = value => String(value ?? '').replace(/[&<>"']/g,char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-const money = n => new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:0}).format(n);
+const money = displayMoney;
 const labels = {new:'Новая',accepted:'В сборке',ready:'Готова к выдаче',completed:'Выдана',cancelled:'Отменена'};
 const steps = {new:['accepted','Принять'],accepted:['ready','Готово к выдаче'],ready:['completed','Подтвердить выдачу']};
 const roles = {owner:'Владелец',seller:'Сотрудник',buyer:'Покупатель'};
@@ -122,7 +124,7 @@ function renderRequests(requests) {
   return requests.map(order => {
     const step = steps[order.status];
     return `<article class="panel"><div class="row"><h3>Заявка № ${order.id}</h3><span class="pill">${labels[order.status]}</span></div>
-      <p>${escape(order.name)} · ${escape(new Date(order.created).toLocaleString('ru-RU'))}</p>
+      <p>${escape(order.name)} · ${escape(new Date(order.created).toLocaleString(demoLocale))}</p>
       <ul>${list(order.items)}</ul><p><b>${money(order.total)}</b></p>
       ${step ? `<form class="row" data-request="${order.id}" data-status="${order.status}"><button name="status" value="${step[0]}">${step[1]}</button><button class="secondary" name="status" value="cancelled">Отменить</button></form>` : ''}</article>`;
   }).join('') || '<p>Заявок пока нет.</p>';
@@ -284,7 +286,7 @@ async function manage() {
     reportForm.elements.from.value = moscowDate(new Date(Date.now()-29*86400000));
     reportForm.elements.to.value = moscowDate(new Date());
     ledgerForm.elements.date.value = moscowDate(new Date());
-    const rubles = cents => new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',minimumFractionDigits:2}).format(cents/100);
+    const rubles = cents => displayMoney(cents/100);
     let reportRequest = 0;
     function table(headers,rows) {
       return rows.length ? `<div class="table-scroll"><table><thead><tr>${headers.map(text => `<th>${escape(text)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">За этот период данных нет.</p>';
@@ -309,7 +311,7 @@ async function manage() {
         <h3>Внесённые операции</h3>${table(['Дата','Тип','Категория','Сумма','Комментарий'],stats.entries.map(entry => [entry.date,entry.kind === 'income' ? 'Доход' : 'Расход',entry.category,rubles(entry.amount),entry.note]))}
         <div class="row">${stats.entries.map(entry => `<button type="button" class="secondary" data-remove-entry="${entry.id}">Удалить операцию № ${entry.id} · ${escape(entry.category)} · ${rubles(entry.amount)}</button>`).join('')}</div>`;
         for (const button of report.querySelectorAll('[data-remove-entry]')) button.addEventListener('click',async () => {
-          if (!window.confirm('Удалить эту операцию из финансового отчёта?')) return;
+          if (!window.confirm(translate("Удалить эту операцию из финансового отчёта?"))) return;
           button.disabled = true;
           try {
             await api(storeApi('/ledger/remove'),{id:Number(button.dataset.removeEntry)});
@@ -394,7 +396,7 @@ async function manage() {
           orders = latest;
           drawOrders();
         }
-        sync.textContent = 'Проверено в '+new Date().toLocaleTimeString('ru-RU')+'. Автообновление каждые 5 секунд.';
+        sync.textContent = 'Проверено в '+new Date().toLocaleTimeString(demoLocale)+'. Автообновление каждые 5 секунд.';
       } catch (error) {
         sync.textContent = 'Не удалось обновить заявки. Повторим автоматически. '+error.message;
       }
@@ -434,7 +436,7 @@ async function manage() {
   for (const form of document.querySelectorAll('.product-form')) handle(form,async (data,button) => {
     const id = form.dataset.id ? Number(form.dataset.id) : null;
     if (button?.value === 'remove') {
-      if (!window.confirm('Удалить товар из каталога и с витрины?')) return;
+      if (!window.confirm(translate("Удалить товар из каталога и с витрины?"))) return;
       await api(storeApi('/products/remove'),{id});
       await manage();
       notice.textContent = 'Товар удалён.';
@@ -529,7 +531,7 @@ async function track(key) {
     try {
       const latest = await api('/api/track/'+key);
       const label = labels[latest.status];
-      const checkedAt = new Date().toLocaleTimeString('ru-RU');
+      const checkedAt = new Date().toLocaleTimeString(demoLocale);
       feedback.textContent = latest.status === currentStatus
         ? `Статус не изменился. Проверено в ${checkedAt}.`
         : `Статус обновлён — «${label}». Проверено в ${checkedAt}.`;

@@ -1,41 +1,571 @@
-const $=s=>document.querySelector(s), money=n=>Math.round(n).toLocaleString('ru-RU')+' ₽', esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const defaults={brand:'Хмель & Соль',tag:'Хороший вечер начинается рядом.',address:'ул. Лесная, 12',accent:'#214b3d',rate:5,balance:240,ledger:[],products:[{id:1,name:'Фисташки обжаренные',cat:'Снеки',price:249,unit:'150 г · с морской солью',color:'#bdc48b',shape:'nuts',active:true},{id:2,name:'Сырные палочки',cat:'Снеки',price:189,unit:'100 г · копчёные',color:'#e8bd69',shape:'sticks',active:true},{id:3,name:'Лимонад «Лесные ягоды»',cat:'Напитки',price:159,unit:'330 мл · без алкоголя',color:'#9b5963',shape:'bottle',active:true},{id:4,name:'Чипсы из картофеля',cat:'Снеки',price:179,unit:'90 г · паприка',color:'#d98b56',shape:'bag',active:true},{id:5,name:'Лимонад «Лайм и мята»',cat:'Напитки',price:159,unit:'330 мл · без алкоголя',color:'#8dba86',shape:'bottle',active:true},{id:6,name:'Бокал TapStore',cat:'Аксессуары',price:490,unit:'400 мл · фирменная коллекция',color:'#b9cfbd',shape:'glass',active:true}],orders:[{id:1042,name:'Анна',items:[{name:'Сырные палочки',q:2,price:189}],total:378,status:0,slot:'Через 20 минут',earned:18,spent:0,mine:false},{id:1041,name:'Михаил',items:[{name:'Фисташки обжаренные',q:1,price:249}],total:249,status:1,slot:'Через 15 минут',earned:12,spent:0,mine:false},{id:1040,name:'Ольга',items:[{name:'Бокал TapStore',q:2,price:490}],total:980,status:2,slot:'В ближайшее время',earned:49,spent:0,mine:false}]};
-let isProjectOwner=false,partnerLeads=[],leadCursor=null,leadLoading=false,leadError='',partnerRequestId=null;
-let state;try{state=JSON.parse(localStorage.getItem('tapstore-v1'))||structuredClone(defaults)}catch{state=structuredClone(defaults)}let currentRole='buyer',tab='brand',cat='Все товары',query='',cart={},useBonus=false,orderFilter='Все';
-function save(){localStorage.setItem('tapstore-v1',JSON.stringify(state))}function toast(t){$('#toast').innerHTML='<div class="toast">'+esc(t)+'</div>';setTimeout(()=>$('#toast').innerHTML='',3200)}
-const statuses=['Новая','Собирается','Готова к выдаче','Выдана'];
-function icon(p){let body=p.shape==='bottle'?`<path d="M47 12h26v22l13 20v66q0 12-12 12H46q-12 0-12-12V54l13-20z" fill="${p.color}"/><path d="M48 8h24v9H48z" fill="#e4d8b7"/><rect x="36" y="61" width="48" height="43" rx="3" fill="#f3ead8"/><text x="60" y="79" text-anchor="middle" font-size="9" fill="#365043">ЛЕСНОЙ</text><text x="60" y="93" text-anchor="middle" font-size="10" fill="#365043">ЛИМОНАД</text>`:p.shape==='glass'?'<path d="M30 20h60l-8 78H38z" fill="#d8e9de" stroke="#90ad9a" stroke-width="3"/><path d="M40 50h40l-4 40H44z" fill="#b7cfba"/><text x="60" y="72" text-anchor="middle" fill="#31543e" font-size="12">tapstore</text><path d="M60 100v20m-25 0h50" stroke="#90ad9a" stroke-width="4"/>':`<path d="M27 16l66 2-4 112H30z" fill="${p.color}"/><path d="M27 16l66 2M30 130h59" stroke="#0002" stroke-width="6"/><circle cx="60" cy="68" r="25" fill="#f5eacb"/><text x="60" y="65" text-anchor="middle" fill="#435438" font-size="9">ХМЕЛЬ</text><text x="60" y="78" text-anchor="middle" fill="#435438" font-size="11">& СОЛЬ</text>`;return `<svg viewBox="0 0 120 140" aria-hidden="true">${body}</svg>`}
-function baseRender(){document.documentElement.style.setProperty('--accent',state.accent);$('#roles').innerHTML=[['buyer','Покупатель'],['seller','Продавец'],['owner','Владелец']].map(([r,n])=>`<button class="${currentRole===r?'on':''}" onclick="currentRole='${r}';render()">${n}</button>`).join('');$('#app').innerHTML=(currentRole==='buyer'?buyer():currentRole==='seller'?seller():owner())+`<footer><span>tapstore · индивидуальная витрина вашего магазина</span><span>Демо · без оплаты и реальных заказов <button class="smallButton" onclick="resetDemo()">Сбросить демо</button></span></footer>`}
-function buyer(){return `<div class="row" style="margin-bottom:20px"><b>${esc(state.brand)}</b><span class="pill">Демо-магазин · пример расписания</span></div><div class="hero"><div class="heroText"><div class="eyebrow">ВАШ МАГАЗИН У ДОМА</div><h1>${esc(state.tag)}</h1><p>Выберите любимые снеки и напитки.<br>Мы соберём — вы заберёте по пути.</p><span style="font-size:12px;color:#e0c998">Пример настроек: сборка за 15 минут · бонусы ${state.rate}%</span></div><div class="art"><div class="circle"></div><div class="pack"><small>КОЛЛЕКЦИЯ ВКУСА</small><br>ХМЕЛЬ<br>& СОЛЬ</div><span class="herochip">Маленькие радости. Рядом.</span></div></div><div class="info"><span>⌖ ${esc(state.address)}</span><span>◷ Пример расписания: 11:00–23:00</span><span class="dot">● Только самовывоз</span></div><div class="layout"><section><div class="tools"><div class="tabs">${['Все товары','Снеки','Напитки','Аксессуары'].map(c=>`<button class="${cat===c?'on':''}" onclick="cat='${c}';render()">${c}</button>`).join('')}</div><input aria-label="Поиск товаров" type="search" placeholder="Поиск по каталогу" value="${esc(query)}" oninput="search(this.value)"></div><div class="grid" id="products">${products()}</div><div class="panel history"><div class="row"><h3>Мои заявки</h3><span class="muted">Обновляются после действий продавца</span></div>${state.orders.filter(o=>o.mine).map(o=>`<div class="line row"><span><b>№ ${o.id}</b> · ${money(o.total)}<br><small>${esc(o.slot)}</small></span><span class="pill">${statuses[o.status]||'Отменена'}</span></div>`).join('')||'<p>Здесь появится ваша первая демонстрационная заявка.</p>'}</div></section><aside class="panel cart"><div class="row"><h2>Ваша корзина</h2><span class="muted">${Object.values(cart).reduce((a,b)=>a+b,0)} шт.</span></div>${cartHTML()}<div class="bonus"><div class="row"><span>Ваши бонусы</span><strong>${state.balance} Б</strong></div><small>1 бонус = 1 ₽ · до 30% суммы</small></div>${Object.keys(cart).length?`<label style="font-weight:400"><input style="display:inline;width:auto;margin:0" type="checkbox" ${useBonus?'checked':''} onchange="useBonus=this.checked;render()"> Списать ${discount()} бонусов</label><div class="row total"><span>Итого</span><span>${money(total()-discount())}</span></div><p class="muted">Начислим ${Math.floor((total()-discount())*state.rate/100)} бонусов после выдачи</p><button class="primary full" onclick="checkout()">Перейти к самовывозу →</button>`:'<div class="empty">Добавьте что-нибудь вкусное<br>из каталога слева</div>'}<p class="note">Учебная витрина: снеки, лимонады и аксессуары. Алкоголя в каталоге нет. Заявки не отправляются в магазин.</p><button class="smallButton" onclick="bonusHistory()">История бонусов</button></aside></div>`}
-function products(){const ps=state.products.filter(p=>p.active&&(cat==='Все товары'||cat===p.cat)&&p.name.toLowerCase().includes(query.toLowerCase()));return ps.map(p=>`<article class="card"><div class="productPic" style="background:${p.color}22"><span class="badge">+${Math.floor(p.price*state.rate/100)} бонусов</span>${icon(p)}</div><span class="muted">${p.cat}</span><h3>${esc(p.name)}</h3><span class="muted">${esc(p.unit)}</span><div class="priceRow"><span>${money(p.price)}</span><button class="add" aria-label="Добавить ${esc(p.name)}" onclick="add(${p.id})">${cart[p.id]?cart[p.id]+' +':'+'}</button></div></article>`).join('')||'<div class="panel">Ничего не найдено. Измените поиск или категорию.</div>'}
-function search(v){query=v;$('#products').innerHTML=products()}function add(id){cart[id]=(cart[id]||0)+1;render()}function qty(id,d){cart[id]+=d;if(cart[id]<=0)delete cart[id];render()}function total(){return Object.entries(cart).reduce((n,[id,q])=>n+state.products.find(p=>p.id==id).price*q,0)}function discount(){return useBonus?Math.min(state.balance,Math.floor(total()*.3)):0}function cartHTML(){return Object.entries(cart).map(([id,q])=>{let p=state.products.find(p=>p.id==id);return `<div class="line"><div class="row"><b style="font-size:13px">${esc(p.name)}</b><span>${money(p.price*q)}</span></div><div class="qty"><button aria-label="Уменьшить количество" onclick="qty(${id},-1)">−</button>${q}<button aria-label="Увеличить количество" onclick="qty(${id},1)">+</button><span class="muted">${money(p.price)} / шт.</span></div></div>`}).join('')}
-function checkout(){if(!Object.keys(cart).length)return;$('#modal').innerHTML=`<div class="row"><h2>Забрать по пути</h2><button class="secondary" onclick="closeModal()">✕</button></div><p>Демонстрационная заявка · без оплаты</p><form onsubmit="submitOrder(event)"><label>Как к вам обращаться<input name="name" value="Алексей" required maxlength="40"></label><label>Время самовывоза<select name="slot"><option>Через 15 минут</option><option>Через 30 минут</option><option>Через 1 час</option></select></label><div class="panel">⌖ ${esc(state.address)}<p>Ежедневно, 11:00–23:00</p></div><div class="row total"><span>Итого</span><span>${money(total()-discount())}</span></div><button class="primary full">Создать демо-заявку</button></form>`;$('#modal').showModal()}
-function closeModal(){$('#modal').close()}function submitOrder(e){e.preventDefault();let f=new FormData(e.target),spent=discount(),sum=total()-spent,id=Math.max(...state.orders.map(o=>o.id),1042)+1;state.orders.unshift({id,name:f.get('name'),slot:f.get('slot'),status:0,items:Object.entries(cart).map(([id,q])=>{let p=state.products.find(p=>p.id==id);return {name:p.name,price:p.price,q}}),total:sum,earned:Math.floor(sum*state.rate/100),spent,mine:true});state.balance-=spent;if(spent)state.ledger.unshift({text:'Списание · заявка № '+id,delta:-spent});cart={};useBonus=false;save();closeModal();render();toast('Заявка № '+id+' создана. Откройте роль «Продавец».')}
-function bonusHistory(){$('#modal').innerHTML=`<div class="row"><h2>История бонусов</h2><button class="secondary" onclick="closeModal()">✕</button></div><div class="bonus"><strong>${state.balance} Б</strong><p>Стартовый демо-баланс: 240 бонусов</p></div>${state.ledger.map(l=>`<div class="line row"><span>${esc(l.text)}</span><b>${l.delta>0?'+':''}${l.delta} Б</b></div>`).join('')||'<p>Операций пока нет. Начисление появится после выдачи вашей заявки.</p>'}`;$('#modal').showModal()}
-function seller(){return `<div class="headTitle"><div><div class="eyebrow">РАБОЧЕЕ МЕСТО ПРОДАВЦА</div><h1>Всё готово к хорошему вечеру.</h1><p>${esc(state.brand)} · ${esc(state.address)}</p></div><span class="pill">● Демонстрационная смена</span></div><div class="row"><h2>Заявки на самовывоз</h2><span class="muted">${state.orders.filter(o=>o.status<3).length} в работе</span></div><div class="board">${statuses.map((s,i)=>`<section class="column"><div class="row"><b>${s}</b><span class="pill">${state.orders.filter(o=>o.status===i).length}</span></div>${state.orders.filter(o=>o.status===i).map(o=>`<article class="order"><div class="row"><b>№ ${o.id}</b><span class="muted">${o.mine?'С витрины':'Демо'}</span></div><h3>${esc(o.name)}</h3><span class="muted">◷ ${esc(o.slot)}</span><p>${o.items.map(p=>esc(p.name)+' × '+p.q).join('<br>')}</p><b>${money(o.total)}</b>${i<3?`<button class="primary" onclick="advance(${o.id})">${['Принять в работу','Готово к выдаче','Подтвердить выдачу'][i]} →</button><button class="smallButton" style="margin-top:12px" onclick="cancelOrder(${o.id})">Отменить</button>`:'<p class="dot">✓ Выдана · бонусы учтены</p>'}</article>`).join('')||'<p class="muted">Пока нет заявок</p>'}</section>`).join('')}</div>${state.orders.some(o=>o.status===4)?'<p class="muted">Отменено заявок: '+state.orders.filter(o=>o.status===4).length+'</p>':''}`}
-function advance(id){let o=state.orders.find(o=>o.id===id);if(o.status>=3)return;o.status++;if(o.status===3&&o.mine){state.balance+=o.earned;state.ledger.unshift({text:'Начисление · заявка № '+id,delta:o.earned})}save();render();toast(o.status===3?'Заявка выдана. Бонусы начислены.':'Статус заявки обновлён')}
-function cancelOrder(id){let o=state.orders.find(o=>o.id===id);if(o.status>=3)return;o.status=4;if(o.mine&&o.spent){state.balance+=o.spent;state.ledger.unshift({text:'Возврат · заявка № '+id,delta:o.spent})}save();render();toast('Заявка отменена. Списанные бонусы возвращены.')}
-function owner(){let done=state.orders.filter(o=>o.status===3),rev=done.reduce((a,o)=>a+o.total,0);return `<div class="headTitle"><div><div class="eyebrow">КАБИНЕТ ВЛАДЕЛЬЦА</div><h1>Ваш магазин. Ваши правила.</h1><p>Настройте витрину и посмотрите, как работает самовывоз.</p></div><button class="secondary" onclick="currentRole='buyer';render()">Открыть витрину ↗</button></div><div class="stats"><div class="panel stat"><span class="muted">Демо-оборот · выданные</span><strong>${money(rev)}</strong><small>${done.length} завершённых заявок</small></div><div class="panel stat"><span class="muted">Все заявки</span><strong>${state.orders.length}</strong><small>${state.orders.filter(o=>o.status<3).length} сейчас в работе</small></div><div class="panel stat"><span class="muted">Средний чек · выданные</span><strong>${money(done.length?rev/done.length:0)}</strong><small>По данным демонстрации</small></div><div class="panel stat"><span class="muted">Начислено бонусов</span><strong>${state.ledger.filter(l=>l.delta>0&&l.text.startsWith('Начисление')).reduce((a,l)=>a+l.delta,0)} Б</strong><small>Кэшбэк ${state.rate}%</small></div></div><div class="tabs ownerTabs">${[['brand','Бренд и настройки'],['products','Управление товарами'],['analytics','Аналитика'],...(isProjectOwner?[['partners','Заявки партнёров']]:[])].map(([t,n])=>`<button class="${tab===t?'on':''}" onclick="tab='${t}';render()">${n}</button>`).join('')}</div>${tab==='brand'?brand():tab==='products'?manageProducts():tab==='partners'?partnersPanel():analytics(done)}`}
-function brand(){return `<div class="settings"><form class="panel" onsubmit="saveBrand(event)"><h2>Индивидуальная витрина</h2><label>Название магазина<input name="brand" value="${esc(state.brand)}" required maxlength="40"></label><label>Заголовок витрины<input name="tag" value="${esc(state.tag)}" required maxlength="80"></label><label>Адрес самовывоза<input name="address" value="${esc(state.address)}" required maxlength="100"></label><div class="row"><label>Акцентный цвет<input name="accent" type="color" value="${state.accent}" style="height:44px"></label><label>Бонусы, %<input name="rate" type="number" value="${state.rate}" min="0" max="20" required></label></div><button class="primary">Сохранить настройки</button></form><div class="panel"><span class="eyebrow">ВАША ВИТРИНА НА TAPSTORE</span><h2>Маленький магазин.<br>Большой сервис.</h2><p>Бренд, ассортимент и программа лояльности принадлежат вашему магазину. Покупатель выбирает товары, продавец видит новые заявки, а вы — результат.</p><div class="bonus"><h3>Как показать владельцу</h3><p>1. Создайте заявку в роли покупателя.<br>2. Проведите её до выдачи у продавца.<br>3. Вернитесь к покупателю за бонусами.<br>4. Измените название и цвет магазина.</p></div><p class="note">Настройки, корзина и заявки учебного магазина сохраняются в этом браузере. Заявки партнёров сохраняются отдельно на сервере и доступны только владельцу TapStore. Оплата и автоматические уведомления не подключены.</p></div></div>`}
-function saveBrand(e){e.preventDefault();let f=new FormData(e.target);for(let k of ['brand','tag','address','accent'])state[k]=f.get(k).trim();state.rate=Number(f.get('rate'));save();render();toast('Настройки сохранены. Витрина обновлена.')}
-function manageProducts(){return `<section class="panel"><div class="row"><h2>Ассортимент</h2><button class="primary" onclick="productForm()">+ Добавить товар</button></div><p class="note">Демо-каталог содержит только снеки, лимонады и аксессуары. Добавление алкогольных товаров в прототипе не предусмотрено.</p><div style="overflow:auto"><table class="table"><thead><tr><th>Товар</th><th>Категория</th><th>Цена</th><th>Витрина</th><th></th></tr></thead><tbody>${state.products.map(p=>`<tr><td><b>${esc(p.name)}</b><br><span class="muted">${esc(p.unit)}</span></td><td>${p.cat}</td><td>${money(p.price)}</td><td><button class="secondary" onclick="toggleProduct(${p.id})">${p.active?'● Видно':'○ Скрыто'}</button></td><td><button class="smallButton" onclick="productForm(${p.id})">Изменить</button></td></tr>`).join('')}</tbody></table></div></section>`}
-function toggleProduct(id){state.products.find(p=>p.id===id).active=!state.products.find(p=>p.id===id).active;delete cart[id];save();render()}
-function productForm(id){let p=state.products.find(p=>p.id===id)||{name:'',unit:'',price:100,cat:'Снеки'};$('#modal').innerHTML=`<div class="row"><h2>${id?'Изменить':'Новый'} товар</h2><button class="secondary" onclick="closeModal()">✕</button></div><form onsubmit="saveProduct(event,${id||0})"><label>Название<input name="name" required maxlength="60" value="${esc(p.name)}"></label><label>Описание / объём<input name="unit" required maxlength="70" value="${esc(p.unit)}"></label><label>Категория<select name="cat">${['Снеки','Напитки','Аксессуары'].map(c=>`<option ${p.cat===c?'selected':''}>${c}</option>`).join('')}</select></label><label>Цена, ₽<input type="number" min="1" max="100000" step="1" name="price" required value="${p.price}"></label><label><input type="checkbox" required style="display:inline;width:auto"> Подтверждаю: товар не содержит алкоголь</label><button class="primary full">Сохранить товар</button></form>`;$('#modal').showModal()}
-function saveProduct(e,id){e.preventDefault();let f=new FormData(e.target),name=f.get('name').trim();if(/пиво|алкогол|водк|вино|виски|сидр|beer|wine/i.test(name)){toast('В демо доступны только товары без алкоголя');return}let p=state.products.find(p=>p.id===id);if(!p){p={id:Date.now(),color:'#aabb88',shape:'bag',active:true};state.products.push(p)}Object.assign(p,{name,unit:f.get('unit').trim(),cat:f.get('cat'),price:Number(f.get('price'))});save();closeModal();render();toast('Товар сохранён')}
-function analytics(done){let cats=['Снеки','Напитки','Аксессуары'];return `<div class="settings"><section class="panel"><div class="row"><h2>Интерес к витрине</h2><span class="pill">Иллюстративные данные</span></div><p>Посещения за неделю · пример графика</p><div class="chart">${[42,67,51,89,73,98,82].map((v,i)=>`<div class="bar" style="height:${v}%" title="${v} посещений"><small>${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'][i]}</small></div>`).join('')}</div><p style="margin-top:50px" class="note">График посещений — фиксированный пример. Показатели сверху рассчитаны по заявкам этого демо.</p></section><section class="panel"><h2>Что покупают</h2><p>По выданным заявкам текущего демо</p>${cats.map(c=>{let n=done.reduce((sum,o)=>sum+o.items.filter(i=>state.products.find(p=>p.name===i.name)?.cat===c).reduce((a,i)=>a+i.q,0),0);return `<div class="line row"><b>${c}</b><span>${n} шт.</span></div>`}).join('')}<div class="bonus"><h3>Повторные покупки начинаются здесь</h3><p>Бонусы начисляются после выдачи. Отмена возвращает списанные бонусы.</p></div></section></div>`}
-function resetDemo(){$('#modal').innerHTML='<h2>Начать демонстрацию заново?</h2><p>Настройки, заявки и бонусы в этом браузере вернутся к исходному примеру.</p><div class="row"><button class="secondary" onclick="closeModal()">Продолжить демо</button><button class="primary" onclick="state=structuredClone(defaults);cart={};useBonus=false;save();closeModal();render();toast(\'Демо сброшено\')">Сбросить</button></div>';$('#modal').showModal()}
-render();
-/* Owner inbox is available only on the protected server. */
+const DEMO_BASE = new URL('.',import.meta.url).pathname;
+function demoNavigate(url) { location.href = DEMO_BASE+'#'+url; location.reload(); }
+import {demoApi,setupDemo} from './state.js';
+setupDemo();
+const page = document.querySelector('#page');
+const notice = document.querySelector('#notice');
+const escape = value => String(value ?? '').replace(/[&<>"']/g,char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const money = n => new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:0}).format(n);
+const labels = {new:'Новая',accepted:'В сборке',ready:'Готова к выдаче',completed:'Выдана',cancelled:'Отменена'};
+const steps = {new:['accepted','Принять'],accepted:['ready','Готово к выдаче'],ready:['completed','Подтвердить выдачу']};
+const roles = {owner:'Владелец',seller:'Сотрудник',buyer:'Покупатель'};
+const cabinet = role => role === 'buyer' ? '/buyer' : '/manage';
+const path = (location.hash.slice(1).split('?')[0] || '/').replace(/\/$/,'') || '/';
+const fields = form => Object.fromEntries(new FormData(form));
+const list = items => items.map(item => `<li>${escape(item.name)} × ${item.qty}</li>`).join('');
+const cart = new Map();
+let catalog = [];
+let stopUpdates = () => {};
+function autoUpdate(update) {
+  stopUpdates();
+  let busy = false;
+  const run = async () => {
+    if (busy || document.hidden) return;
+    busy = true;
+    try { await update(); } finally { busy = false; }
+  };
+  const timer = setInterval(run,5000);
+  document.addEventListener('visibilitychange',run);
+  stopUpdates = () => {
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange',run);
+  };
+}
+window.addEventListener('pagehide',() => stopUpdates());
 
+async function api(url,data) { return demoApi(url,data); }
 
-
-function render(){baseRender();if(currentRole==='buyer')$('#app').insertAdjacentHTML('afterbegin',presentation());if(currentRole==='owner'&&tab==='partners'&&isProjectOwner&&!leadLoading&&!partnerLeads.length&&!leadError)loadPartnerLeads();}
-function presentation(){return `<section class="pitch"><div class="pitch-copy"><span class="eyebrow">TAPSTORE ДЛЯ ВЛАДЕЛЬЦЕВ МАГАЗИНОВ</span><h1>Ваш магазин.<br>Теперь ближе к покупателю.</h1><p>Индивидуальная витрина, заявки на самовывоз и бонусная программа — в одном простом сервисе. Посмотрите, как это может работать у вас.</p><div class="pitch-actions"><button class="primary" onclick="tryDemo()">Попробовать демо ↓</button><button class="outline" onclick="openPartnerForm()">Стать первым партнёром ↗</button></div><span class="note">Набираем участников пилота · условия обсудим лично</span></div><div class="pitch-card"><span class="eyebrow">ПРЕИМУЩЕСТВА ДЛЯ БИЗНЕСА</span><div class="benefit"><span>01</span><div><h3>Своя витрина без разработки с нуля</h3><p>Название, цвета и ассортимент вашего магазина.</p></div></div><div class="benefit"><span>02</span><div><h3>Ассортимент под вашим контролем</h3><p>Меняйте цены, добавляйте и скрывайте товары.</p></div></div><div class="benefit"><span>03</span><div><h3>Продавцу удобно работать</h3><p>Заявки и этапы сборки на одном экране.</p></div></div></div></section><section class="walkthrough" id="demo-start"><div class="row"><h3>Попробуйте за 2 минуты</h3><span class="muted">Роли переключаются сверху</span></div><div class="steps"><div><b>1. Выберите товары</b><p>Добавьте снеки в корзину.</p></div><div><b>2. Создайте заявку</b><p>Выберите время самовывоза.</p></div><div><b>3. Станьте продавцом</b><p>Примите, соберите и выдайте.</p></div><div><b>4. Посмотрите результат</b><p>Владелец увидит оборот, покупатель — бонусы.</p></div></div><p class="note">Ниже — учебный магазин. Цены, расписание, сроки сборки и бонусы приведены для примера. Реальных продаж и оплаты нет.</p></section>`}
-function tryDemo(){currentRole='buyer';render();document.querySelector('#demo-start').scrollIntoView({behavior:'smooth',block:'start'});}
-function openPartnerForm(){partnerRequestId=null;$('#modal').innerHTML=`<div class="row"><span class="eyebrow">РАННИЙ ДОСТУП К TAPSTORE</span><button class="secondary" aria-label="Закрыть форму" onclick="closeModal()">✕</button></div><h2>Станьте первым партнёром</h2><p>Расскажите о магазине. Сохраним заявку для владельца TapStore, чтобы обсудить с вами пилот. Это не заказ и не обязательство оплаты.</p><form id="partner-form" onsubmit="sendPartnerRequest(event)"><label>Название магазина<input name="store" autocomplete="organization" placeholder="Например, Хмель & Соль" maxlength="80" required></label><div class="form-pair"><label>Город<input name="city" autocomplete="address-level2" placeholder="Ваш город" maxlength="80" required></label><label>Ваше имя<input name="name" autocomplete="given-name" placeholder="Как к вам обращаться" maxlength="60" required></label></div><label>Телефон, Telegram или email<input name="contact" placeholder="+7… / @username / name@example.ru" maxlength="120" required><span class="note">Достаточно одного удобного способа связи.</span></label><div class="honeypot" aria-hidden="true"><label>Ваш сайт<input name="website" tabindex="-1" autocomplete="off"></label></div><label class="consent"><input name="consent" type="checkbox" required><span>Разрешаю сохранить заявку и связаться со мной по вопросу пилота TapStore. <button type="button" class="smallButton" onclick="document.querySelector('#data-details').hidden=!document.querySelector('#data-details').hidden">Как используются данные</button></span></label><p id="data-details" class="note" hidden>Название магазина, город, имя и контакт сохраняются на сервере проекта и доступны владельцу TapStore для обсуждения пилота. Они не показываются участникам демонстрации. Чтобы запросить удаление, обратитесь к владельцу TapStore, передав номер заявки. Автоматическая рассылка не подключена.</p><p id="partner-error" role="alert" class="form-error"></p><button id="partner-submit" class="primary full">Отправить заявку на пилот →</button><p class="note">Заявка сохранится только после успешного ответа сервера. Условия участия согласовываются отдельно.</p></form>`;$('#modal').showModal();}
-async function sendPartnerRequest(e){e.preventDefault();const form=e.target,btn=$('#partner-submit'),err=$('#partner-error');err.textContent='';const f=new FormData(form);const contact=String(f.get('contact')).trim();if(!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)||/^@[A-Za-z0-9_]{5,32}$/.test(contact)||/^\+?[\d\s()\-]{10,24}$/.test(contact))){err.textContent='Укажите телефон, email или Telegram в формате @username.';return;}partnerRequestId ||= crypto.randomUUID();btn.disabled=true;btn.textContent='Сохраняем заявку…';try{const r=await fetch('/api/partners',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:partnerRequestId,store:f.get('store'),city:f.get('city'),name:f.get('name'),contact,consent:f.get('consent')==='on',website:f.get('website')})});let data;try{data=await r.json()}catch{throw Error('Сервер не подтвердил сохранение. Попробуйте ещё раз.')}if(!r.ok||!data.ok)throw Error(data.error||'Не удалось сохранить заявку.');partnerLeads=[];leadError='';$('#modal').innerHTML=`<div class="success-mark">✓</div><h2>Заявка сохранена</h2><p>Спасибо! Заявка на пилот доступна владельцу TapStore. Вы указали контакт: <b>${esc(contact)}</b>.</p><div class="bonus"><span class="muted">Номер заявки</span><p style="word-break:break-all">${esc(data.id)}</p></div><p class="note">Автоматическое письмо или сообщение не отправляется. Ответ последует после просмотра заявки владельцем.</p><button class="primary full" onclick="closeModal()">Вернуться к демонстрации</button>`;}catch(error){err.textContent=error.message||'Проверьте соединение и повторите отправку.';btn.disabled=false;btn.textContent='Повторить отправку';}}
-async function loadProjectSession(){try{const r=await fetch('/api/session');const s=await r.json();isProjectOwner=s.admin===true;if(currentRole==='owner')render();}catch{isProjectOwner=false;}}
-function partnersPanel(){return `<section class="panel"><div class="row"><div><span class="eyebrow">ТОЛЬКО ВЛАДЕЛЬЦУ TAPSTORE</span><h2>Заявки на пилот</h2></div><button class="secondary" onclick="loadPartnerLeads()">Обновить</button></div><p>Реальные обращения из формы «Стать первым партнёром». Демонстрационные заявки на самовывоз находятся у продавца.</p>${leadLoading?'<p role="status">Загружаем заявки…</p>':leadError?'<p class="form-error" role="alert">'+esc(leadError)+'</p>':partnerLeads.length?'<div style="overflow:auto"><table class="table"><thead><tr><th>Магазин</th><th>Контакт</th><th>Получена</th></tr></thead><tbody>'+partnerLeads.map(l=>'<tr><td><b>'+esc(l.store)+'</b><br>'+esc(l.city)+'</td><td>'+esc(l.name)+'<br>'+esc(l.contact)+'</td><td>'+new Date(l.createdAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+'<br><span class="muted">'+esc(l.id)+'</span></td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Заявок пока нет. После отправки формы они появятся здесь.</div>'}${leadCursor?'<button class="secondary" onclick="loadPartnerLeads(true)">Загрузить ещё</button>':''}</section>`}
-async function loadPartnerLeads(more=false){if(leadLoading||!isProjectOwner)return;leadLoading=true;leadError='';render();try{const r=await fetch('/api/partners'+(more&&leadCursor?'?cursor='+encodeURIComponent(leadCursor):''));const data=await r.json();if(!r.ok)throw Error(data.error||'Не удалось загрузить заявки');partnerLeads=more?partnerLeads.concat(data.leads):data.leads;leadCursor=data.cursor;}catch(e){leadError=e.message;}leadLoading=false;if(currentRole==='owner'&&tab==='partners'){baseRender();}}
-
-
+function handle(form, action) {
+  form.addEventListener('submit',async event => {
+    event.preventDefault();
+    const button = event.submitter;
+    if (form.dataset.busy) return;
+    form.dataset.busy = 'true';
+    if (button) button.disabled = true;
+    notice.textContent = '';
+    try { await action(fields(form),button); }
+    catch (error) { notice.textContent = error.message || 'Ошибка соединения'; }
+    finally { delete form.dataset.busy; if (button) button.disabled = false; }
+  });
+}
+function credentials(autocomplete) {
+  return `<label>Электронная почта<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+    <label>Пароль<input name="password" type="password" autocomplete="${autocomplete}" minlength="12" maxlength="128" required></label>`;
+}
+function welcome(defaultRole = 'owner') {
+  const requested = new URLSearchParams((location.hash.includes('?') ? '?'+location.hash.split('?')[1] : '')).get('role');
+  const role = Object.hasOwn(roles,requested) ? requested : defaultRole;
+  const loginTitle = {owner:'Войти как владелец',seller:'Войти как сотрудник',buyer:'Войти как покупатель'}[role];
+  const registerTitle = role === 'owner' ? 'Регистрация владельца' : 'Регистрация покупателя';
+  const registerHelp = role === 'owner'
+    ? 'Создать магазин можно в кабинете после регистрации.'
+    : 'Заявки, оформленные после входа, появятся в вашем кабинете.';
+  const loginHelp = role === 'seller' ? 'Почту и пароль для входа выдаёт владелец магазина.' : '';
+  page.innerHTML = `<section class="hero"><h1>Ваша витрина в интернете</h1><p>Добавьте товары, поделитесь ссылкой с покупателями и принимайте заявки на самовывоз.</p></section>
+    <section class="panel auth-panel" aria-labelledby="auth-title">
+    <nav class="manage-nav" aria-label="Роль при входе и регистрации">${Object.entries(roles).map(([id,label]) =>
+      `<a href="/?role=${id}"${id === role ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>
+    ${role !== 'seller' ? `<div class="auth-modes" role="group" aria-label="Вход или регистрация">
+      <button type="button" data-mode="login" aria-pressed="true">Вход</button>
+      <button type="button" data-mode="register" aria-pressed="false">Регистрация</button>
+    </div>` : ''}
+    <h2 id="auth-title">${loginTitle}</h2>
+    <p id="auth-help" class="muted"${loginHelp ? '' : ' hidden'}>${loginHelp}</p>
+    <form id="auth">${credentials('current-password')}<button type="submit">Войти</button></form></section>`;
+  const form = document.querySelector('#auth');
+  const password = form.elements.namedItem('password');
+  const submit = form.querySelector('button');
+  const switches = document.querySelectorAll('[data-mode]');
+  let registering = false;
+  for (const control of switches) control.addEventListener('click',() => {
+    const next = control.dataset.mode === 'register';
+    if (form.dataset.busy || next === registering) return;
+    registering = next;
+    for (const option of switches) option.setAttribute('aria-pressed',String(option === control));
+    document.querySelector('#auth-title').textContent = registering ? registerTitle : loginTitle;
+    const help = document.querySelector('#auth-help');
+    help.textContent = registering ? registerHelp : loginHelp;
+    help.hidden = !help.textContent;
+    password.value = '';
+    password.autocomplete = registering ? 'new-password' : 'current-password';
+    submit.textContent = registering ? 'Зарегистрироваться' : 'Войти';
+    notice.textContent = '';
+  });
+  handle(form,async data => {
+    if (registering) {
+      await api(role === 'buyer' ? '/api/register/buyer' : '/api/register',data);
+      demoNavigate(cabinet(role));
+    } else {
+      const session = await api('/api/login',{...data,role});
+      demoNavigate(cabinet(session.role));
+    }
+  });
+}
+function bindLogout(role) {
+  handle(document.querySelector('#logout'),async () => {
+    await api('/api/logout',{});
+    demoNavigate('/?role='+role);
+  });
+}
+async function buyer() {
+  const {account,stores,requests} = await api('/api/buyer');
+  page.innerHTML = `<section class="hero manage-hero"><p>Кабинет покупателя</p><h1>Самовывоз</h1>
+    <div class="row"><span>${escape(account.email)}</span><form id="logout"><button class="secondary">Выйти</button></form></div></section>
+    <div class="columns"><section><div class="row manage-title"><h2>Мои заявки</h2><a class="button secondary" href="/buyer">Обновить</a></div>
+    ${requests.map(order => `<article class="panel"><div class="row"><h3>Заявка № ${order.id}</h3><span class="pill">${labels[order.status]}</span></div>
+      <p>${escape(order.store)} · ${escape(order.address)}</p><ul>${list(order.items)}</ul><b>${money(order.total)}</b></article>`).join('') || '<p>У вас пока нет заявок.</p>'}
+    </section><section><h2>Витрины магазинов</h2>
+    ${stores.map(store => `<article class="panel"><h3><a href="/shop/${store.slug}">${escape(store.name)}</a></h3><p class="muted">${escape(store.address)}</p></article>`).join('') || '<p>Пока нет опубликованных витрин.</p>'}</section></div>`;
+  bindLogout('buyer');
+}
+function renderRequests(requests) {
+  return requests.map(order => {
+    const step = steps[order.status];
+    return `<article class="panel"><div class="row"><h3>Заявка № ${order.id}</h3><span class="pill">${labels[order.status]}</span></div>
+      <p>${escape(order.name)} · ${escape(new Date(order.created).toLocaleString('ru-RU'))}</p>
+      <ul>${list(order.items)}</ul><p><b>${money(order.total)}</b></p>
+      ${step ? `<form class="row" data-request="${order.id}" data-status="${order.status}"><button name="status" value="${step[0]}">${step[1]}</button><button class="secondary" name="status" value="cancelled">Отменить</button></form>` : ''}</article>`;
+  }).join('') || '<p>Заявок пока нет.</p>';
+}
+function photoBase64(file) {
+  if (!file?.size) throw new Error('Выберите фотографию');
+  if (file.size > 2 * 1024 * 1024) throw new Error('Фотография должна быть не больше 2 МБ');
+  return new Promise((resolve,reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(new Error('Не удалось прочитать фотографию'));
+    reader.readAsDataURL(file);
+  });
+}
+function productForm(product = {name:'',price:'',active:1}, photoLink = '', canEditPrice = true) {
+  return `<form class="product-form line" data-id="${product.id ?? ''}">
+    <label>Название<input name="name" value="${escape(product.name)}" maxlength="80" required></label>
+    <label>Цена, ₽<input name="price" type="number" min="1" max="100000" value="${product.price}" ${canEditPrice ? 'required' : 'readonly'}></label>
+    <label>Скидка, %<input name="discount" type="number" min="0" max="99" step="1" value="${product.discount ?? 0}" ${canEditPrice ? 'required' : 'readonly'}></label>
+    ${canEditPrice ? '' : '<p class="muted">Для изменения цены и скидки владелец должен включить вам разрешение во вкладке «Сотрудники».</p>'}
+    <p class="muted">0 — без скидки. Цена со скидкой округляется до целого рубля, минимум 1 ₽.</p>
+    <label><input type="checkbox" name="inStock" ${product.in_stock !== 0 ? 'checked' : ''}> В наличии</label>
+    <label><input name="active" type="checkbox" ${product.active ? 'checked' : ''}> Показывать на витрине</label>
+    <label><input name="allowed" type="checkbox" ${product.id ? 'checked' : ''} required> Товар из ассортимента пилота: закуски, безалкогольные напитки или аксессуары</label>
+    ${product.has_photo ? `<img class="product-photo" src="${escape(photoLink)}" alt="" loading="lazy">` : ''}
+    <label>Фото карточки<input type="file" name="photo" accept="image/jpeg,image/png,image/webp"></label>
+    <p class="muted">JPG, PNG или WebP, до 2 МБ. Фото сохранится вместе с товаром.</p>
+    ${product.has_photo ? '<label><input type="checkbox" name="removePhoto"> Удалить текущее фото</label>' : ''}
+    <div class="row"><button class="secondary">${product.id ? 'Сохранить товар' : 'Добавить товар'}</button>
+    ${product.id ? `
+    <button class="secondary danger" value="remove" formnovalidate>Удалить товар</button>` : ''}</div></form>`;
+}
+async function manage() {
+  stopUpdates();
+  const params = new URLSearchParams((location.hash.includes('?') ? '?'+location.hash.split('?')[1] : ''));
+  const selectedStore = params.get('store');
+  const storeQuery = selectedStore === null ? '' : '?' + new URLSearchParams({store:selectedStore});
+  let data;
+  try { data = await api('/api/manage'+storeQuery); }
+  catch (error) { if (error.status === 401) return welcome(); throw error; }
+  const {account,store,stores,products,requests,staff:employees = []} = data;
+  const owner = account.role === 'owner';
+  if (owner && (!store || params.get('section') === 'create')) {
+    page.innerHTML = `<section class="hero manage-hero"><p>Кабинет владельца</p><h1>Создать магазин</h1>
+      <div class="row"><span>${escape(account.email)}</span><form id="logout"><button class="secondary">Выйти</button></form></div></section>
+      <form id="create-store" class="panel manage-settings">
+        <label>Название магазина<input name="name" maxlength="80" required autofocus></label>
+        <label>Адрес витрины<input name="slug" minlength="3" maxlength="40" pattern="[a-z0-9][a-z0-9\\-]{2,39}" placeholder="my-shop" required aria-describedby="slug-help"></label>
+        <p id="slug-help" class="muted">От 3 до 40 символов: строчные латинские буквы, цифры и дефис. Например, my-shop.</p>
+        <div class="row"><button>Создать магазин</button>${store ? `<a href="/manage${storeQuery}">Вернуться в кабинет</a>` : ''}</div>
+      </form>`;
+    bindLogout(account.role);
+    handle(document.querySelector('#create-store'),async fields => {
+      const {slug} = await api('/api/manage/stores',fields);
+      demoNavigate('/manage?' + new URLSearchParams({store:slug,section:'storefront'}));
+    });
+    return;
+  }
+  const sections = owner
+    ? {requests:'Заявки',catalog:'Каталог',photos:'Фото товаров',analytics:'Аналитика',storefront:'Витрина',staff:'Сотрудники'}
+    : {requests:'Заявки',catalog:'Каталог',photos:'Фото товаров'};
+  const requestedSection = params.get('section');
+  const activeSection = Object.hasOwn(sections, requestedSection) ? requestedSection : 'requests';
+  const manageLink = section => '/manage?' + new URLSearchParams({store:store.slug,section});
+  const storeApi = suffix => '/api/manage'+suffix+'?'+new URLSearchParams({store:store.slug});
+  const launchSteps = [
+    {label:'Добавить первый товар',done:products.some(product => product.active),section:'catalog'},
+    {label:'Указать адрес самовывоза',done:!!store.address.trim(),section:'storefront'},
+    {label:'Опубликовать витрину',done:!!store.published,section:'storefront'}
+  ];
+  page.innerHTML = `<section class="hero manage-hero"><p>${owner ? 'Кабинет владельца' : 'Кабинет продавца'}</p><h1>${escape(store.name)}</h1>
+    <div class="row"><span>${escape(account.email)}</span><form id="logout"><button class="secondary">Выйти</button></form></div></section>
+    ${owner ? `<div class="row store-switcher">
+      ${stores.length > 1 ? `<form class="row" action="/manage"><input type="hidden" name="section" value="${activeSection}"><label>Магазин<select name="store" aria-label="Магазин">
+        ${stores.map(item => `<option value="${escape(item.slug)}"${item.slug === store.slug ? ' selected' : ''}>${escape(item.name)}</option>`).join('')}
+      </select></label><button class="secondary">Открыть</button></form>` : ''}
+      <a class="button secondary" href="${escape(manageLink('create'))}">Создать магазин</a>
+    </div>` : ''}
+    <nav class="manage-nav" aria-label="Разделы кабинета">${Object.entries(sections).map(([section,label]) =>
+      `<a href="${escape(manageLink(section))}"${activeSection === section ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>
+    ${owner && !launchSteps.every(step => step.done) ? `<section class="panel launch-guide"><h2>Запуск магазина</h2>
+      <p class="muted">Готово ${launchSteps.filter(step => step.done).length} из 3 шагов.</p>
+      <ol>${launchSteps.map(step => `<li><a href="${escape(manageLink(step.section))}">${step.done ? '✓ ' : ''}${step.label}</a>${step.done ? ' — готово' : ''}</li>`).join('')}</ol>
+      <p class="muted">Добавьте хотя бы один товар, видимый на витрине.</p></section>` : ''}
+    ${owner && store.published ? `<div class="panel row"><a href="/shop/${store.slug}" target="_blank" rel="noopener">Открыть витрину ↗</a>
+      <button id="copy-store-link" class="secondary" type="button">Скопировать ссылку</button><p id="copy-feedback" role="status" class="muted"></p></div>` : ''}
+    ${activeSection === 'requests' ? `<section><div class="row manage-title"><h2>Заявки</h2><button id="refresh" class="secondary">Обновить</button></div>
+    <p id="order-sync" class="muted" role="status">Автообновление каждые 5 секунд.</p>
+    <div id="order-filters" class="manage-nav" role="group" aria-label="Статусы заявок"></div>
+    <div id="requests"></div></section>` : ''}
+    ${activeSection === 'storefront' ? `<form id="settings" class="panel manage-settings"><h2>Витрина</h2>
+      <label>Название<input name="name" value="${escape(store.name)}" maxlength="80" required></label>
+      <label>Адрес самовывоза<input name="address" maxlength="180" value="${escape(store.address)}"></label>
+      <label><input name="published" type="checkbox" ${store.published ? 'checked' : ''}> Опубликовать витрину</label>
+      <div class="row"><button>Сохранить</button>${store.published ? `<a href="/shop/${store.slug}">Открыть витрину ↗</a>` : ''}</div></form>` : ''}
+    ${activeSection === 'catalog' ? `<section class="panel"><h2>Каталог</h2><details><summary>Добавить товар</summary>${productForm()}</details>
+      ${products.map(product => `<details class="line"><summary>${escape(product.name)} · ${money(product.price)}${product.discount ? ' · скидка '+product.discount+'%' : ''}${product.in_stock ? '' : ' · нет в наличии'}${product.active ? '' : ' · скрыт'}</summary>
+        ${productForm(product,storeApi('/photos/'+product.id),owner || account.can_edit_prices === 1)}</details>`).join('')}</section>` : ''}
+    ${activeSection === 'photos' ? `<section><h2>Фото товаров</h2><p class="muted">JPG, PNG или WebP, до 2 МБ на товар.</p>
+      <div class="grid">${products.map(product => `<form class="panel" id="photo-${product.id}" data-photo="${product.id}">
+        ${product.has_photo ? `<img class="product-photo" src="${escape(storeApi('/photos/'+product.id))}" alt="" loading="lazy">` : ''}
+        <h3>${escape(product.name)}</h3>
+        ${product.active ? '' : '<p class="muted">Товар скрыт с витрины.</p>'}
+        <label>Выбрать фото<input type="file" name="photo" accept="image/jpeg,image/png,image/webp"></label>
+        <div class="row"><button value="save">${product.has_photo ? 'Заменить фото' : 'Загрузить фото'}</button>
+        ${product.has_photo ? '<button class="secondary" value="remove">Удалить фото</button>' : ''}</div>
+      </form>`).join('') || '<p>В каталоге пока нет товаров.</p>'}</div></section>` : ''}
+    ${activeSection === 'analytics' ? `<section class="panel"><h2>Аналитика</h2>
+      <label>Период<select id="analytics-period"><option value="1">Последние 24 часа</option><option value="7" selected>Последние 7 дней</option><option value="30">Последние 30 дней</option></select></label>
+      <p class="muted">Заявки, созданные за выбранный период, по их текущему статусу. Сумма и средний чек рассчитаны по выданным заявкам.</p>
+      <div id="analytics-result" class="grid" role="status"></div></section>
+      <section class="panel"><h2>Финансовый отчёт — ${escape(store.name)}</h2>
+        <form id="report-period" class="row"><label>С даты<input type="date" name="from" required></label><label>По дату<input type="date" name="to" required></label><button>Показать отчёт</button></form>
+        <p class="muted">Даты по Москве. Выручка учитывается при выдаче заявки. Внесите закупки, аренду, зарплаты, налоги и другие расходы вручную. Итог показывает разницу учтённых доходов и расходов.</p>
+        <div id="financial-report" aria-live="polite"></div>
+      </section><form id="ledger-entry" class="panel"><h2>Добавить доход или расход</h2>
+        <p class="muted">Выданные заявки TapStore уже включены в доход. Здесь добавляйте только другие доходы и расходы.</p>
+        <div class="columns"><label>Тип<select name="kind"><option value="expense">Расход</option><option value="income">Другой доход</option></select></label>
+        <label>Дата<input type="date" name="date" required></label>
+        <label>Сумма, ₽<input name="amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
+        <label>Категория<input name="category" maxlength="60" list="ledger-categories" required></label></div>
+        <datalist id="ledger-categories"><option value="Закупки"><option value="Аренда"><option value="Зарплаты"><option value="Налоги"><option value="Реклама"><option value="Прочее"></datalist>
+        <label>Комментарий<input name="note" maxlength="300"></label><button>Добавить операцию</button>
+        <p id="ledger-feedback" role="status"></p></form>` : ''}
+    ${activeSection === 'staff' ? `<section><h2>Сотрудники</h2>
+      ${employees.map(employee => `<form class="panel staff-access" data-email="${escape(employee.email)}"><div class="row">
+        <h3>${escape(employee.email)}</h3><span class="pill">${employee.enabled ? 'Доступ открыт' : 'Доступ отключён'}</span></div>
+        <label><input type="checkbox" name="enabled" ${employee.enabled ? 'checked' : ''}> Разрешить вход и работу в магазине</label>
+        <label><input type="checkbox" name="canEditPrices" ${employee.can_edit_prices ? 'checked' : ''}> Разрешить менять цены товаров</label>
+        <button class="secondary">Сохранить доступ</button></form>`).join('') || '<p class="muted">Сотрудники пока не добавлены.</p>'}
+      <form id="staff" class="panel manage-settings"><h2>Добавить сотрудника</h2>${credentials('new-password')}
+        <label><input type="checkbox" name="canEditPrices"> Разрешить менять цены товаров</label>
+        <button>Создать учётную запись</button></form></section>` : ''}`;
+  bindLogout(account.role);
+  if (activeSection === 'analytics') {
+    const period = document.querySelector('#analytics-period');
+    const result = document.querySelector('#analytics-result');
+    let requestId = 0;
+    async function loadAnalytics() {
+      const current = ++requestId;
+      result.textContent = 'Загружаем…';
+      try {
+        const stats = await api(storeApi('/analytics')+'&days='+period.value);
+        if (current !== requestId) return;
+        result.innerHTML = [
+          ['Поступило заявок',stats.received],['Выдано',stats.completed],['Отменено',stats.cancelled],
+          ['Сумма выданных заявок',money(stats.amount)],['Средний чек',money(stats.average)]
+        ].map(([label,value]) => `<div class="panel"><p class="muted">${label}</p><strong>${value}</strong></div>`).join('');
+      } catch (error) {
+        if (current === requestId) result.textContent = 'Не удалось загрузить аналитику. '+error.message;
+      }
+    }
+    period.addEventListener('change',loadAnalytics);
+    await loadAnalytics();
+    const reportForm = document.querySelector('#report-period');
+    const ledgerForm = document.querySelector('#ledger-entry');
+    const report = document.querySelector('#financial-report');
+    const moscowDate = date => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
+    reportForm.elements.from.value = moscowDate(new Date(Date.now()-29*86400000));
+    reportForm.elements.to.value = moscowDate(new Date());
+    ledgerForm.elements.date.value = moscowDate(new Date());
+    const rubles = cents => new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',minimumFractionDigits:2}).format(cents/100);
+    let reportRequest = 0;
+    function table(headers,rows) {
+      return rows.length ? `<div class="table-scroll"><table><thead><tr>${headers.map(text => `<th>${escape(text)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">За этот период данных нет.</p>';
+    }
+    async function loadReport() {
+      const current = ++reportRequest;
+      report.textContent = 'Загружаем отчёт…';
+      const range = new URLSearchParams(fields(reportForm));
+      try {
+        const stats = await api(storeApi('/report')+'&'+range);
+        if (current !== reportRequest) return;
+        report.innerHTML = `<div class="grid">${[
+          ['Выручка TapStore',rubles(stats.salesAmount)],['Другие доходы',rubles(stats.otherIncome)],
+          ['Всего доходов',rubles(stats.income)],['Расходы',rubles(stats.expenses)],
+          ['Итог за период',rubles(stats.balance)],['Средний чек выданных заявок',rubles(stats.average)],
+          ['Поступило заявок',stats.requests.received],['Выдано за период',stats.salesCount],['Отменено из поступивших',stats.requests.cancelled]
+        ].map(([label,value]) => `<div class="panel"><p class="muted">${label}</p><strong>${value}</strong></div>`).join('')}</div>
+        ${stats.estimatedSales ? `<p class="muted">У ${stats.estimatedSales} старых выданных заявок дата выдачи не сохранена. Для них использована дата создания.</p>` : ''}
+        <h3>Доходы и расходы по дням</h3>${table(['Дата','Доходы','Расходы','Итог'],stats.daily.map(day => [day.date,rubles(day.income),rubles(day.expenses),rubles(day.income-day.expenses)]))}
+        <h3>Расходы по категориям</h3>${table(['Категория','Сумма'],stats.categories.map(category => [category.name,rubles(category.amount)]))}
+        <h3>Товары в выданных заявках — топ 20</h3>${table(['Товар','Количество','Выручка'],stats.products.map(product => [product.name,product.qty,rubles(product.amount)]))}
+        <h3>Внесённые операции</h3>${table(['Дата','Тип','Категория','Сумма','Комментарий'],stats.entries.map(entry => [entry.date,entry.kind === 'income' ? 'Доход' : 'Расход',entry.category,rubles(entry.amount),entry.note]))}
+        <div class="row">${stats.entries.map(entry => `<button type="button" class="secondary" data-remove-entry="${entry.id}">Удалить операцию № ${entry.id} · ${escape(entry.category)} · ${rubles(entry.amount)}</button>`).join('')}</div>`;
+        for (const button of report.querySelectorAll('[data-remove-entry]')) button.addEventListener('click',async () => {
+          if (!window.confirm('Удалить эту операцию из финансового отчёта?')) return;
+          button.disabled = true;
+          try {
+            await api(storeApi('/ledger/remove'),{id:Number(button.dataset.removeEntry)});
+            await loadReport();
+          } catch (error) {
+            notice.textContent = error.message;
+            button.disabled = false;
+          }
+        });
+      } catch (error) {
+        if (current === reportRequest) report.textContent = 'Не удалось загрузить отчёт. '+error.message;
+      }
+    }
+    handle(reportForm,loadReport);
+    let entryKey = '', entrySignature = '';
+    handle(ledgerForm,async data => {
+      const entry = {kind:data.kind,date:data.date,category:data.category,note:data.note,amount:Math.round(Number(data.amount)*100)};
+      const signature = JSON.stringify(entry);
+      if (signature !== entrySignature) { entryKey = randomKey(); entrySignature = signature; }
+      await api(storeApi('/ledger'),{...entry,key:entryKey});
+      ledgerForm.reset();
+      ledgerForm.elements.date.value = moscowDate(new Date());
+      entrySignature = ''; entryKey = '';
+      document.querySelector('#ledger-feedback').textContent = 'Операция добавлена. Если её дата вне выбранного периода, измените период отчёта.';
+      await loadReport();
+    });
+    await loadReport();
+  }
+  const copyButton = document.querySelector('#copy-store-link');
+  if (copyButton) copyButton.addEventListener('click',async () => {
+    const feedback = document.querySelector('#copy-feedback');
+    const url = new URL(DEMO_BASE+'#/shop/'+store.slug,location.origin).href;
+    try {
+      await navigator.clipboard.writeText(url);
+      feedback.textContent = 'Ссылка скопирована.';
+    } catch {
+      feedback.replaceChildren();
+      const label = document.createElement('label');
+      label.textContent = 'Скопируйте ссылку вручную';
+      const field = document.createElement('input');
+      field.value = url;
+      field.readOnly = true;
+      label.append(field);
+      feedback.append(label);
+      field.focus();
+      field.select();
+    }
+  });
+  for (const form of document.querySelectorAll('.staff-access')) handle(form,async data => {
+    await api(storeApi('/staff/update'),{email:form.dataset.email,enabled:data.enabled === 'on',canEditPrices:data.canEditPrices === 'on'});
+    await manage();
+    notice.textContent = 'Права сотрудника сохранены.';
+  });
+  if (activeSection === 'photos' && location.hash.startsWith('#photo-')) {
+    document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  }
+  let orders = requests;
+  let filter = 'new';
+  let changingOrder = false;
+  let refreshTask;
+  const filters = {new:'Новые',accepted:'В сборке',ready:'К выдаче',archive:'Архив'};
+  const matches = (order,value) => value === 'archive'
+    ? ['completed','cancelled'].includes(order.status) : order.status === value;
+  function drawOrders() {
+    document.querySelector('#order-filters').innerHTML = Object.entries(filters).map(([value,label]) =>
+      `<button type="button" class="secondary" data-filter="${value}" aria-pressed="${filter === value}">${label} · ${orders.filter(order => matches(order,value)).length}</button>`).join('');
+    for (const button of document.querySelectorAll('[data-filter]')) button.addEventListener('click',() => {
+      if (changingOrder) return;
+      filter = button.dataset.filter;
+      drawOrders();
+    });
+    document.querySelector('#requests').innerHTML = renderRequests(orders.filter(order => matches(order,filter)));
+    bindOrders();
+  }
+  async function refresh() {
+    if (changingOrder || refreshTask) return;
+    const sync = document.querySelector('#order-sync');
+    refreshTask = (async () => {
+      try {
+        const latest = (await api(storeApi(''))).requests;
+        if (!changingOrder && JSON.stringify(latest) !== JSON.stringify(orders)) {
+          orders = latest;
+          drawOrders();
+        }
+        sync.textContent = 'Проверено в '+new Date().toLocaleTimeString('ru-RU')+'. Автообновление каждые 5 секунд.';
+      } catch (error) {
+        sync.textContent = 'Не удалось обновить заявки. Повторим автоматически. '+error.message;
+      }
+    })();
+    try { await refreshTask; } finally { refreshTask = null; }
+  }
+  function bindOrders() {
+    for (const form of document.querySelectorAll('[data-request]')) handle(form,async (_,button) => {
+      if (changingOrder) return;
+      changingOrder = true;
+      try {
+        await api(storeApi('/requests/'+form.dataset.request),{previous:form.dataset.status,status:button.value});
+        if (refreshTask) await refreshTask;
+        orders = (await api(storeApi(''))).requests;
+        drawOrders();
+      } finally { changingOrder = false; }
+    });
+  }
+  if (activeSection === 'requests') {
+    drawOrders();
+    document.querySelector('#refresh').addEventListener('click',refresh);
+    autoUpdate(refresh);
+  }
+  for (const form of document.querySelectorAll('[data-photo]')) handle(form,async (data,button) => {
+    const removing = button?.value === 'remove';
+    const image = removing ? null : await photoBase64(data.photo);
+    await api(storeApi('/photos/'+form.dataset.photo),{image});
+    await manage();
+    notice.textContent = removing ? 'Фотография удалена.' : 'Фотография сохранена.';
+  });
+  const settings = document.querySelector('#settings');
+  if (settings) handle(settings,async data => {
+    await api(storeApi('/store'),{...data,published:data.published==='on'});
+    await manage();
+    notice.textContent = 'Настройки сохранены.';
+  });
+  for (const form of document.querySelectorAll('.product-form')) handle(form,async (data,button) => {
+    const id = form.dataset.id ? Number(form.dataset.id) : null;
+    if (button?.value === 'remove') {
+      if (!window.confirm('Удалить товар из каталога и с витрины?')) return;
+      await api(storeApi('/products/remove'),{id});
+      await manage();
+      notice.textContent = 'Товар удалён.';
+    } else {
+      const image = data.photo?.size ? await photoBase64(data.photo) : undefined;
+      const saved = await api(storeApi('/products'),{name:data.name,price:Number(data.price),discount:Number(data.discount),inStock:data.inStock==='on',active:data.active==='on',allowed:data.allowed==='on',id});
+      const productId = id ?? saved.id;
+      form.dataset.id = productId;
+      if (image !== undefined || data.removePhoto === 'on') {
+        try {
+          await api(storeApi('/photos/'+productId),{image:image ?? null});
+        } catch (error) {
+          throw new Error('Товар сохранён. Фото не сохранено: '+error.message+' Повторите сохранение.');
+        }
+      }
+      await manage();
+      notice.textContent = id === null ? 'Товар добавлен.' : 'Товар сохранён.';
+    }
+  });
+  const staff = document.querySelector('#staff');
+  if (staff) handle(staff,async data => {
+    await api(storeApi('/staff'),{...data,canEditPrices:data.canEditPrices === 'on'});
+    await manage();
+    notice.textContent = 'Учётная запись создана. Для входа выберите роль «Сотрудник».';
+  });
+}
+const randomKey = () => Array.from(crypto.getRandomValues(new Uint8Array(24)),n => n.toString(16).padStart(2,'0')).join('');
+function renderCart() {
+  const entries = catalog.filter(p => cart.has(p.id));
+  document.querySelector('#cart-items').innerHTML = entries.map(p => `<label class="row line">${escape(p.name)} · ${money(p.price)}<input class="quantity" aria-label="Количество: ${escape(p.name)}" type="number" min="0" max="20" value="${cart.get(p.id)}" data-qty="${p.id}" required></label>`).join('') || '<p>Добавьте товары из каталога.</p>';
+  const updateTotal = () => { document.querySelector('#total').textContent = money(entries.reduce((n,p) => n + p.price*(cart.get(p.id)||0),0)); };
+  updateTotal();
+  document.querySelector('#submit-request').disabled = !entries.length;
+  for (const field of document.querySelectorAll('[data-qty]')) field.addEventListener('change',() => {
+    if (!field.validity.valid) return;
+    if (Number(field.value)) { cart.set(Number(field.dataset.qty),Number(field.value)); updateTotal(); }
+    else { cart.delete(Number(field.dataset.qty)); renderCart(); }
+  });
+}
+async function storefront(slug) {
+  const endpoint = '/api/shops/'+slug;
+  const {store,products} = await api(endpoint);
+  catalog = products;
+  let attempt = '';
+  let signature = '';
+  page.innerHTML = `<section class="hero"><p>Самовывоз</p><h1>${escape(store.name)}</h1><p>${escape(store.address)}</p></section>
+    <div class="columns"><section><h2>Каталог</h2><div class="grid">
+    ${products.map(p => `<article class="panel">${p.has_photo ? `<img class="product-photo" src="${endpoint}/photos/${p.id}" alt="" loading="lazy">` : ''}
+      <h3>${escape(p.name)}</h3>${p.discount ? `<p><del class="muted">${money(p.original_price)}</del> <span class="pill">−${p.discount}%</span></p>` : ''}
+      <div class="row"><b>${money(p.price)}</b><button data-add="${p.id}" ${p.in_stock ? '' : 'disabled'}>${p.in_stock ? 'Добавить' : 'Нет в наличии'}</button></div></article>`).join('') || '<p>Ассортимент скоро появится.</p>'}</div></section>
+    <form class="panel" id="checkout"><h2>Корзина</h2><div id="cart-items"></div>
+    <p class="row"><b>Итого</b><strong id="total"></strong></p><label>Имя для выдачи<input name="name" maxlength="60" autocomplete="given-name" required></label>
+    <button id="submit-request">Отправить заявку</button></form></div>`;
+  renderCart();
+  for (const button of document.querySelectorAll('[data-add]')) button.addEventListener('click',() => {
+    if (document.querySelector('#checkout').dataset.busy) return;
+    const id = Number(button.dataset.add);
+    if (!catalog.find(product => product.id === id)?.in_stock) return;
+    cart.set(id,Math.min(20,(cart.get(id)||0)+1));
+    renderCart();
+    notice.textContent = 'Товар добавлен в корзину.';
+  });
+  handle(document.querySelector('#checkout'),async data => {
+    const order = {name:data.name,items:[...cart].map(([id,qty]) => ({id,qty,price:catalog.find(p=>p.id===id).price}))};
+    const current = JSON.stringify(order);
+    if (signature !== current) { signature = current; attempt = randomKey(); }
+    const result = await api(endpoint+'/requests',{...order,key:attempt});
+    demoNavigate('/track/'+result.key);
+  });
+}
+async function track(key) {
+  stopUpdates();
+  const order = await api('/api/track/'+key);
+  page.innerHTML = `<section class="hero"><p>${escape(order.store)}</p><h1>Заявка № ${order.id}</h1><p>${escape(order.address)}</p></section>
+    <section class="panel"><div class="row"><h2>Самовывоз</h2><span id="tracking-status" class="pill">${labels[order.status]}</span></div>
+    <ul>${list(order.items)}</ul><p><b>${money(order.total)}</b></p>
+    <p class="muted">Сохраните ссылку. Статус обновляется автоматически каждые 5 секунд.</p>
+    <button id="refresh" class="secondary" type="button">Обновить статус</button>
+    <p id="tracking-feedback" class="muted" role="status" hidden></p></section>`;
+  const button = document.querySelector('#refresh');
+  const status = document.querySelector('#tracking-status');
+  const feedback = document.querySelector('#tracking-feedback');
+  let currentStatus = order.status;
+  let checking = false;
+  async function refreshStatus() {
+    if (checking) return;
+    checking = true;
+    button.disabled = true;
+    button.textContent = 'Проверяем…';
+    feedback.hidden = false;
+    feedback.textContent = 'Запрашиваем актуальный статус заявки…';
+    try {
+      const latest = await api('/api/track/'+key);
+      const label = labels[latest.status];
+      const checkedAt = new Date().toLocaleTimeString('ru-RU');
+      feedback.textContent = latest.status === currentStatus
+        ? `Статус не изменился. Проверено в ${checkedAt}.`
+        : `Статус обновлён — «${label}». Проверено в ${checkedAt}.`;
+      status.textContent = label;
+      currentStatus = latest.status;
+    } catch (error) {
+      feedback.textContent = `Не удалось обновить статус. ${error.message}`;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Обновить статус';
+      checking = false;
+    }
+  }
+  button.addEventListener('click',refreshStatus);
+  autoUpdate(refreshStatus);
+}
+try {
+  const {account} = await api('/api/session');
+  if (account) {
+    const link = document.querySelector('#cabinet-link');
+    link.href = cabinet(account.role);
+    link.textContent = account.role === 'buyer' ? 'Мой кабинет' : 'Кабинет магазина';
+  }
+  if (path.startsWith('/shop/')) await storefront(path.split('/')[2]);
+  else if (path.startsWith('/track/')) await track(path.split('/')[2]);
+  else {
+    if (!account || (path === '/' && new URLSearchParams((location.hash.includes('?') ? '?'+location.hash.split('?')[1] : '')).has('role'))) {
+      welcome(path === '/buyer' ? 'buyer' : 'owner');
+    } else if (path !== cabinet(account.role)) {
+      demoNavigate(cabinet(account.role));
+    } else if (account.role === 'buyer') {
+      await buyer();
+    } else {
+      await manage();
+    }
+  }
+} catch (error) {
+  page.textContent = error.message || 'Не удалось загрузить страницу';
+}

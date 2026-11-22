@@ -7,6 +7,29 @@ export function displayMoney(rubles) {
   return new Intl.NumberFormat(demoLocale,{style:'currency',currency,minimumFractionDigits:currency === 'RUB' ? 0 : 2,maximumFractionDigits:2}).format(rubles/rates[currency]);
 }
 const dictionary = Object.fromEntries(`
+Все товары|All products
+Закуски|Snacks
+Напитки|Drinks
+Аксессуары|Accessories
+Другое|Other
+Витрина магазина / Самовывоз|Storefront / Pickup
+Выберите любимое. Заберите по пути.|Pick your favorites. Collect on your way.
+Закажите заранее|Order ahead
+Дождитесь статуса «Готова к выдаче» и приходите за заявкой.|Wait until your request is ready for pickup before visiting.
+Найти в магазине|Search this store
+Поиск товаров|Search products
+Категории товаров|Product categories
+Ваша корзина|Your cart
+Как к вам обращаться?|Your first name
+Самовывоз после подтверждения готовности.|Collect after your request is marked ready.
+Иллюстрация категории товара|Product category illustration
+Ничего не найдено. Попробуйте другой запрос.|No products found. Try another search.
+Здесь пока спокойно|All caught up
+В этом статусе нет заявок. Новые появятся автоматически.|No requests in this status. New requests appear automatically.
+Нет соединения. Показаны последние загруженные данные. Изменения не отправлены: подключитесь и повторите действие.|You are offline. Showing previously loaded data. Changes have not been sent: reconnect and try again.
+Нет соединения. Подключитесь к интернету и повторите действие.|You are offline. Reconnect and try again.
+Сервер не ответил. Проверьте соединение и повторите действие.|The server did not respond. Check your connection and try again.
+В корзине|In cart
 Рабочее демо TapStore|TapStore live demo
 TapStore — рабочее демо|TapStore — live demo
 Тестовые данные сохраняются в этом браузере. Выберите роль и пройдите путь от заявки до выдачи.|Test data stays in this browser. Choose a role and follow an order from checkout to pickup.
@@ -261,8 +284,8 @@ function translatePage() {
     if(!['SCRIPT','STYLE','TEXTAREA'].includes(node.parentElement?.tagName) && /[А-Яа-яЁё]/.test(node.data)) nodes.push(node);
   }
   for(const node of nodes) {const value=translate(node.data);if(value !== node.data) node.data=value;}
-  for(const element of document.querySelectorAll('[placeholder],[aria-label],[title]')) {
-    for(const attribute of ['placeholder','aria-label','title']) {
+  for(const element of document.querySelectorAll('[placeholder],[aria-label],[title],[alt]')) {
+    for(const attribute of ['placeholder','aria-label','title','alt']) {
       const value=element.getAttribute(attribute);
       if(value && /[А-Яа-яЁё]/.test(value)) element.setAttribute(attribute,translate(value));
     }
@@ -273,7 +296,7 @@ export function setupI18n() {
   localStorage.setItem('tapstore-language',language);
   localStorage.setItem('tapstore-currency',currency);
   document.documentElement.lang=language;
-  const controls=document.createElement('section');controls.className='panel';
+  const controls=document.createElement('section');controls.className='panel locale-controls';
   controls.innerHTML=`<div class="row"><label>${language === 'en' ? 'Language' : 'Язык'}<select id="demo-language"><option value="ru">Русский</option><option value="en">English</option></select></label><label>${language === 'en' ? 'Display currency' : 'Валюта отображения'}<select id="demo-currency"><option value="RUB">RUB ₽</option><option value="USD">USD $</option><option value="EUR">EUR €</option></select></label></div><p class="muted">${language === 'en' ? 'Illustrative demo rates: 1 USD = 100 RUB, 1 EUR = 110 RUB. Product prices and manual entries are entered in base RUB.' : 'Примерные курсы для демо: 1 USD = 100 RUB, 1 EUR = 110 RUB. Цены товаров и ручные операции вводятся в базовых рублях.'}</p>`;
   document.querySelector('main').prepend(controls);
   const localeSelect=controls.querySelector('#demo-language'),currencySelect=controls.querySelector('#demo-currency');

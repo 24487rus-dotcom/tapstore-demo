@@ -171,7 +171,7 @@ export function setupDemo() {
   read();
   if(!sessionStorage.getItem('tapstore-demo-role')) sessionStorage.setItem('tapstore-demo-role','buyer');
   const panel=document.createElement('section');panel.className='panel demo-controls';
-  panel.innerHTML='<strong>Рабочее демо TapStore</strong><p>Тестовые данные сохраняются в этом браузере. Выберите роль и пройдите путь от заявки до выдачи.</p><div class="row"><div id="demo-roles" class="row"></div><button id="reset-demo" class="secondary">Сбросить демо</button></div>';
+  panel.innerHTML='<div><strong>Рабочее демо TapStore</strong><p>Тестовые данные сохраняются в этом браузере. Выберите роль и пройдите путь от заявки до выдачи.</p></div><div class="row"><div id="demo-roles" class="row"></div><button id="reset-demo" class="secondary">Сбросить демо</button></div>';
   for(const [role,label] of Object.entries(roles)) {
     const button=document.createElement('button');button.textContent=label;button.type='button';
     button.className=sessionStorage.getItem('tapstore-demo-role') === role ? '' : 'secondary';
@@ -193,7 +193,7 @@ export function setupDemo() {
   new MutationObserver(() => {
     for(const link of document.querySelectorAll('a[href^="/"]')) {
       const href=link.getAttribute('href');
-      if(!href.startsWith(DEMO_BASE+'')) link.setAttribute('href',DEMO_BASE+'#'+href);
+      if(!href.startsWith(DEMO_BASE)) link.setAttribute('href',DEMO_BASE+'#'+href);
     }
     for(const image of document.querySelectorAll('img[src^="/api/"]')) {
       const id=Number(image.getAttribute('src').split('?')[0].split('/').pop());

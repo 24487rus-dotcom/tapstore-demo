@@ -16,6 +16,17 @@ const path = (location.hash.slice(1).split('?')[0] || '/').replace(/\/$/,'') || 
 const fields = form => Object.fromEntries(new FormData(form));
 const list = items => items.map(item => `<li>${escape(item.name)} × ${item.qty}</li>`).join('');
 const cart = new Map();
+const connection = document.createElement('div');
+connection.className = 'connection-banner';
+connection.setAttribute('role','status');
+document.querySelector('main').prepend(connection);
+function updateConnection() {
+  connection.hidden = navigator.onLine;
+  connection.textContent = 'Нет соединения. Показаны последние загруженные данные. Изменения не отправлены: подключитесь и повторите действие.';
+}
+window.addEventListener('online',updateConnection);
+window.addEventListener('offline',updateConnection);
+updateConnection();
 let catalog = [];
 let stopUpdates = () => {};
 function autoUpdate(update) {
@@ -46,7 +57,7 @@ function handle(form, action) {
     if (button) button.disabled = true;
     notice.textContent = '';
     try { await action(fields(form),button); }
-    catch (error) { notice.textContent = error.message || 'Ошибка соединения'; }
+    catch (error) { notice.textContent = error.name === 'TimeoutError' ? 'Сервер не ответил. Проверьте соединение и повторите действие.' : error.message || 'Ошибка соединения'; }
     finally { delete form.dataset.busy; if (button) button.disabled = false; }
   });
 }
@@ -123,11 +134,11 @@ async function buyer() {
 function renderRequests(requests) {
   return requests.map(order => {
     const step = steps[order.status];
-    return `<article class="panel"><div class="row"><h3>Заявка № ${order.id}</h3><span class="pill">${labels[order.status]}</span></div>
-      <p>${escape(order.name)} · ${escape(new Date(order.created).toLocaleString(demoLocale))}</p>
-      <ul>${list(order.items)}</ul><p><b>${money(order.total)}</b></p>
+    return `<article class="panel request-card"><div class="row"><h3>Заявка № ${order.id}</h3><span class="pill status-${escape(order.status)}">${labels[order.status]}</span></div>
+      <p class="request-meta">${escape(order.name)} · ${escape(new Date(order.created).toLocaleString(demoLocale))}</p>
+      <ul>${list(order.items)}</ul><p class="request-total"><b>${money(order.total)}</b></p>
       ${step ? `<form class="row" data-request="${order.id}" data-status="${order.status}"><button name="status" value="${step[0]}">${step[1]}</button><button class="secondary" name="status" value="cancelled">Отменить</button></form>` : ''}</article>`;
-  }).join('') || '<p>Заявок пока нет.</p>';
+  }).join('') || '<div class="empty-state"><h3>Здесь пока спокойно</h3><p>В этом статусе нет заявок. Новые появятся автоматически.</p></div>';
 }
 function photoBase64(file) {
   if (!file?.size) throw new Error('Выберите фотографию');
@@ -195,7 +206,8 @@ async function manage() {
     {label:'Указать адрес самовывоза',done:!!store.address.trim(),section:'storefront'},
     {label:'Опубликовать витрину',done:!!store.published,section:'storefront'}
   ];
-  page.innerHTML = `<section class="hero manage-hero"><p>${owner ? 'Кабинет владельца' : 'Кабинет продавца'}</p><h1>${escape(store.name)}</h1>
+  const navSymbols = {requests:'▤',catalog:'▦',photos:'▧',analytics:'◷',storefront:'▣',staff:'♧'};
+  page.innerHTML = `<div class="manage-shell"><aside class="manage-sidebar"><div class="workspace-label">TAPSTORE / ${owner ? 'Владелец' : 'Сотрудник'}</div><nav class="manage-nav" aria-label="Разделы кабинета">${Object.entries(sections).map(([section,label]) => `<a href="${escape(manageLink(section))}"${activeSection === section ? ' aria-current="page"' : ''}><span class="nav-symbol" aria-hidden="true">${navSymbols[section]}</span>${label}</a>`).join('')}</nav></aside><div class="workspace-content"><section class="hero manage-hero"><p>${owner ? 'Кабинет владельца' : 'Кабинет продавца'}</p><h1>${escape(store.name)}</h1>
     <div class="row"><span>${escape(account.email)}</span><form id="logout"><button class="secondary">Выйти</button></form></div></section>
     ${owner ? `<div class="row store-switcher">
       ${stores.length > 1 ? `<form class="row" action="/manage"><input type="hidden" name="section" value="${activeSection}"><label>Магазин<select name="store" aria-label="Магазин">
@@ -203,8 +215,6 @@ async function manage() {
       </select></label><button class="secondary">Открыть</button></form>` : ''}
       <a class="button secondary" href="${escape(manageLink('create'))}">Создать магазин</a>
     </div>` : ''}
-    <nav class="manage-nav" aria-label="Разделы кабинета">${Object.entries(sections).map(([section,label]) =>
-      `<a href="${escape(manageLink(section))}"${activeSection === section ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>
     ${owner && !launchSteps.every(step => step.done) ? `<section class="panel launch-guide"><h2>Запуск магазина</h2>
       <p class="muted">Готово ${launchSteps.filter(step => step.done).length} из 3 шагов.</p>
       <ol>${launchSteps.map(step => `<li><a href="${escape(manageLink(step.section))}">${step.done ? '✓ ' : ''}${step.label}</a>${step.done ? ' — готово' : ''}</li>`).join('')}</ol>
@@ -212,7 +222,8 @@ async function manage() {
     ${owner && store.published ? `<div class="panel row"><a href="/shop/${store.slug}" target="_blank" rel="noopener">Открыть витрину ↗</a>
       <button id="copy-store-link" class="secondary" type="button">Скопировать ссылку</button><p id="copy-feedback" role="status" class="muted"></p></div>` : ''}
     ${activeSection === 'requests' ? `<section><div class="row manage-title"><h2>Заявки</h2><button id="refresh" class="secondary">Обновить</button></div>
-    <p id="order-sync" class="muted" role="status">Автообновление каждые 5 секунд.</p>
+    <p id="order-sync" class="sync-line" role="status">Автообновление каждые 5 секунд.</p>
+    <div class="order-summary" id="order-summary"></div>
     <div id="order-filters" class="manage-nav" role="group" aria-label="Статусы заявок"></div>
     <div id="requests"></div></section>` : ''}
     ${activeSection === 'storefront' ? `<form id="settings" class="panel manage-settings"><h2>Витрина</h2>
@@ -257,7 +268,7 @@ async function manage() {
         <button class="secondary">Сохранить доступ</button></form>`).join('') || '<p class="muted">Сотрудники пока не добавлены.</p>'}
       <form id="staff" class="panel manage-settings"><h2>Добавить сотрудника</h2>${credentials('new-password')}
         <label><input type="checkbox" name="canEditPrices"> Разрешить менять цены товаров</label>
-        <button>Создать учётную запись</button></form></section>` : ''}`;
+        <button>Создать учётную запись</button></form></section>` : ''}</div></div>`;
   bindLogout(account.role);
   if (activeSection === 'analytics') {
     const period = document.querySelector('#analytics-period');
@@ -376,6 +387,7 @@ async function manage() {
   const matches = (order,value) => value === 'archive'
     ? ['completed','cancelled'].includes(order.status) : order.status === value;
   function drawOrders() {
+    document.querySelector('#order-summary').innerHTML = [['Новые',orders.filter(order=>order.status==='new').length],['В сборке',orders.filter(order=>order.status==='accepted').length],['К выдаче',orders.filter(order=>order.status==='ready').length]].map(([label,count])=>`<div><strong>${count}</strong><span>${label}</span></div>`).join('');
     document.querySelector('#order-filters').innerHTML = Object.entries(filters).map(([value,label]) =>
       `<button type="button" class="secondary" data-filter="${value}" aria-pressed="${filter === value}">${label} · ${orders.filter(order => matches(order,value)).length}</button>`).join('');
     for (const button of document.querySelectorAll('[data-filter]')) button.addEventListener('click',() => {
@@ -397,7 +409,9 @@ async function manage() {
           drawOrders();
         }
         sync.textContent = 'Проверено в '+new Date().toLocaleTimeString(demoLocale)+'. Автообновление каждые 5 секунд.';
+        sync.dataset.error = 'false';
       } catch (error) {
+        sync.dataset.error = 'true';
         sync.textContent = 'Не удалось обновить заявки. Повторим автоматически. '+error.message;
       }
     })();
@@ -464,11 +478,28 @@ async function manage() {
   });
 }
 const randomKey = () => Array.from(crypto.getRandomValues(new Uint8Array(24)),n => n.toString(16).padStart(2,'0')).join('');
+function categoryOf(product) {
+  if (/лимонад|напит|сок|вода|soda|juice/i.test(product.name)) return 'drinks';
+  if (/бокал|стакан|аксессуар|glass/i.test(product.name)) return 'accessories';
+  if (/сыр|орех|чипс|сухар|снек|закуск|nuts|cheese/i.test(product.name)) return 'snacks';
+  return 'other';
+}
+function productIllustration(product) {
+  const category = categoryOf(product);
+  const nuts = /орех|nuts/i.test(product.name);
+  const shapes = category === 'drinks' ? `<rect x="143" y="44" width="34" height="24" rx="5" fill="#174f42"/><path d="M143 68 L128 96 L125 215 Q125 234 144 234 H178 Q197 234 197 215 L194 96 L177 68Z" fill="#e6c45a" stroke="#ae913d" stroke-width="2"/><rect x="127" y="124" width="69" height="65" rx="3" fill="#fff9df"/><circle cx="162" cy="155" r="20" fill="#efce5c"/><path d="M150 155h24m-12-12v24" stroke="#fff9df" stroke-width="3"/><path d="M177 124q26-31 29-8q-12 16-29 8" fill="#448b58"/>` : category === 'accessories' ? `<path d="M115 62H200L188 156Q181 176 158 176Q134 176 127 156Z" fill="#ffffff88" stroke="#668d80" stroke-width="3"/><path d="M125 98h65l-8 52q-7 17-24 17q-18 0-24-17Z" fill="#ead59b"/><path d="M158 176v48m-32 8h64" stroke="#668d80" stroke-width="5" stroke-linecap="round"/>` : nuts ? `<ellipse cx="160" cy="166" rx="104" ry="65" fill="#c6d1b7"/><ellipse cx="160" cy="151" rx="104" ry="55" fill="#f8f3df"/>${Array.from({length:16},(_,i)=>{const x=93+(i%5)*30+(i%2)*7,y=120+Math.floor(i/5)*20;return `<ellipse cx="${x}" cy="${y}" rx="16" ry="10" transform="rotate(${i*37} ${x} ${y})" fill="${['#b48045','#d5ad70','#9b6936'][i%3]}" stroke="#fff4d5" stroke-width="1.5"/>`;}).join('')}` : `<ellipse cx="160" cy="194" rx="112" ry="39" fill="#d2d8c7"/><ellipse cx="160" cy="184" rx="111" ry="34" fill="#faf6e9"/>${[0,1,2,3,4].map(i=>`<rect x="${90+i*18}" y="${87+i*6}" width="26" height="110" rx="10" transform="rotate(28 ${103+i*18} ${142+i*6})" fill="${i%2?'#d8a64d':'#e4bc6c'}" stroke="#b88c42" stroke-width="2"/>`).join('')}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="270" viewBox="0 0 320 270"><rect width="320" height="270" fill="${category==='drinks'?'#e8eedf':category==='accessories'?'#e4ebe6':'#f0ece0'}"/><circle cx="254" cy="42" r="110" fill="#ffffff35"/><ellipse cx="160" cy="239" rx="72" ry="9" fill="#1b3d2820"/>${shapes}</svg>`;
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+}
 function renderCart() {
   const entries = catalog.filter(p => cart.has(p.id));
   document.querySelector('#cart-items').innerHTML = entries.map(p => `<label class="row line">${escape(p.name)} · ${money(p.price)}<input class="quantity" aria-label="Количество: ${escape(p.name)}" type="number" min="0" max="20" value="${cart.get(p.id)}" data-qty="${p.id}" required></label>`).join('') || '<p>Добавьте товары из каталога.</p>';
   const updateTotal = () => { document.querySelector('#total').textContent = money(entries.reduce((n,p) => n + p.price*(cart.get(p.id)||0),0)); };
   updateTotal();
+  const count = [...cart.values()].reduce((sum,qty)=>sum+qty,0);
+  const cartButton = document.querySelector('#mobile-cart');
+  if (cartButton) { cartButton.hidden = !count; cartButton.innerHTML = `<span>Корзина · ${count}</span><strong>${money(entries.reduce((sum,p)=>sum+p.price*(cart.get(p.id)||0),0))}</strong>`; }
+  for (const button of document.querySelectorAll('[data-add]')) { const quantity=cart.get(Number(button.dataset.add))||0; if (!button.disabled) button.textContent=quantity ? 'В корзине · '+quantity : 'Добавить'; }
   document.querySelector('#submit-request').disabled = !entries.length;
   for (const field of document.querySelectorAll('[data-qty]')) field.addEventListener('change',() => {
     if (!field.validity.valid) return;
@@ -482,14 +513,28 @@ async function storefront(slug) {
   catalog = products;
   let attempt = '';
   let signature = '';
-  page.innerHTML = `<section class="hero"><p>Самовывоз</p><h1>${escape(store.name)}</h1><p>${escape(store.address)}</p></section>
-    <div class="columns"><section><h2>Каталог</h2><div class="grid">
-    ${products.map(p => `<article class="panel">${p.has_photo ? `<img class="product-photo" src="${endpoint}/photos/${p.id}" alt="" loading="lazy">` : ''}
-      <h3>${escape(p.name)}</h3>${p.discount ? `<p><del class="muted">${money(p.original_price)}</del> <span class="pill">−${p.discount}%</span></p>` : ''}
-      <div class="row"><b>${money(p.price)}</b><button data-add="${p.id}" ${p.in_stock ? '' : 'disabled'}>${p.in_stock ? 'Добавить' : 'Нет в наличии'}</button></div></article>`).join('') || '<p>Ассортимент скоро появится.</p>'}</div></section>
-    <form class="panel" id="checkout"><h2>Корзина</h2><div id="cart-items"></div>
-    <p class="row"><b>Итого</b><strong id="total"></strong></p><label>Имя для выдачи<input name="name" maxlength="60" autocomplete="given-name" required></label>
-    <button id="submit-request">Отправить заявку</button></form></div>`;
+  const categoryLabels = {all:'Все товары',snacks:'Закуски',drinks:'Напитки',accessories:'Аксессуары',other:'Другое'};
+  page.innerHTML = `<section class="hero store-hero"><div><span class="eyebrow">Витрина магазина / Самовывоз</span><h1>${escape(store.name)}</h1><p class="store-description">Выберите любимое. Заберите по пути.</p><p>${escape(store.address)}</p></div><div class="pickup-note"><strong>Закажите заранее</strong><p>Дождитесь статуса «Готова к выдаче» и приходите за заявкой.</p></div></section>
+    <div class="store-layout"><section><div class="catalog-top"><h2>Каталог</h2><span class="muted" id="product-count">${products.length}</span></div><div class="catalog-tools"><label class="catalog-search"><input id="catalog-search" type="search" placeholder="Найти в магазине" aria-label="Поиск товаров"></label></div><div class="category-tabs" role="group" aria-label="Категории товаров">${Object.entries(categoryLabels).filter(([id])=>id==='all'||products.some(p=>categoryOf(p)===id)).map(([id,label])=>`<button type="button" data-category="${id}" aria-pressed="${id==='all'}">${label}</button>`).join('')}</div><div class="grid product-grid">
+    ${products.map(p => `<article class="panel product-card${p.in_stock?'':' is-unavailable'}" data-product="${p.id}">${p.discount ? `<span class="discount-badge">−${p.discount}%</span>` : ''}<img class="product-photo" src="${p.has_photo ? endpoint+'/photos/'+p.id : productIllustration(p)}" alt="${p.has_photo ? escape(p.name) : 'Иллюстрация категории товара'}" loading="lazy"><div class="product-info"><span class="product-category">${categoryLabels[categoryOf(p)]}</span><h3>${escape(p.name)}</h3><div class="row"><b class="product-price">${money(p.price)}</b>${p.discount ? `<del class="muted">${money(p.original_price)}</del>` : ''}</div><button data-add="${p.id}" ${p.in_stock ? '' : 'disabled'}>${p.in_stock ? 'Добавить' : 'Нет в наличии'}</button></div></article>`).join('') || '<p>Ассортимент скоро появится.</p>'}</div><p id="catalog-empty" class="empty-state" hidden>Ничего не найдено. Попробуйте другой запрос.</p></section>
+    <form class="panel cart-panel" id="checkout"><h2>Ваша корзина</h2><div id="cart-items"></div>
+    <p class="row cart-total"><b>Итого</b><strong id="total"></strong></p><label>Имя для выдачи<input name="name" maxlength="60" autocomplete="given-name" placeholder="Как к вам обращаться?" required></label>
+    <button id="submit-request">Отправить заявку</button><p class="cart-caption">Самовывоз после подтверждения готовности.</p></form></div><button type="button" class="mobile-cart" id="mobile-cart" hidden></button>`;
+  let category = 'all';
+  const search = document.querySelector('#catalog-search');
+  function filterCatalog() {
+    let visible=0;
+    for (const card of document.querySelectorAll('[data-product]')) {
+      const product=products.find(p=>p.id===Number(card.dataset.product));
+      const matches=(category==='all'||categoryOf(product)===category)&&product.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase().trim());
+      card.hidden=!matches; if(matches) visible++;
+    }
+    document.querySelector('#product-count').textContent=visible+' / '+products.length;
+    document.querySelector('#catalog-empty').hidden=visible!==0;
+  }
+  search.addEventListener('input',filterCatalog);
+  for (const button of document.querySelectorAll('[data-category]')) button.addEventListener('click',()=>{category=button.dataset.category;for(const item of document.querySelectorAll('[data-category]'))item.setAttribute('aria-pressed',String(item===button));filterCatalog();});
+  document.querySelector('#mobile-cart').addEventListener('click',()=>document.querySelector('#checkout').scrollIntoView({behavior:'smooth',block:'start'}));
   renderCart();
   for (const button of document.querySelectorAll('[data-add]')) button.addEventListener('click',() => {
     if (document.querySelector('#checkout').dataset.busy) return;

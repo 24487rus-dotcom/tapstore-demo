@@ -11,7 +11,7 @@ function navigateDemo(hash) {
 }
 function seed() {
   const created = new Date().toISOString();
-  return {stores:[{slug:'demo',name:'Хмельная лавка · демо',address:'Самара, ул. Демонстрационная, 12',description:'Небольшой магазин с подборкой закусок, напитков и подарков. Выберите товары заранее — мы подготовим их к визиту.',contact:'+7 (000) 000-00-00 · демо',hours:'Ежедневно 10:00–22:00',template:'sky',delivery_enabled:1,published:1}],
+  return {deliveryDemoRevision:1,stores:[{slug:'demo',name:'Хмельная лавка · демо',address:'Самара, ул. Демонстрационная, 12',description:'Небольшой магазин с подборкой закусок, напитков и подарков. Выберите товары заранее — мы подготовим их к визиту.',contact:'+7 (000) 000-00-00 · демо',hours:'Ежедневно 10:00–22:00',template:'sky',delivery_enabled:1,published:1}],
     accounts:Object.keys(roles).map(accountFor),
     products:[{id:1,slug:'demo',name:'Сырные палочки',price:240,discount:10,active:1,in_stock:1},
       {id:2,slug:'demo',name:'Лимонад «Лимон и мята»',variants:'Охлаждённый|Комнатной температуры',price:160,discount:0,active:1,in_stock:1},
@@ -25,7 +25,9 @@ function seed() {
 function read() {
   const value = localStorage.getItem(storageKey);
   if (!value) { const state=seed(); save(state); return state; }
-  return JSON.parse(value);
+  const state=JSON.parse(value);
+  if(!state.deliveryDemoRevision){const demo=state.stores.find(store=>store.slug==='demo');if(demo)demo.delivery_enabled=1;state.deliveryDemoRevision=1;save(state);}
+  return state;
 }
 function save(state) {
   try { localStorage.setItem(storageKey,JSON.stringify(state)); }

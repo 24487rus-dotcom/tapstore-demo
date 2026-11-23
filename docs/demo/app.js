@@ -227,7 +227,7 @@ async function manage() {
     ${owner && !launchSteps.every(step => step.done) ? `<section class="panel launch-guide"><h2>Запуск магазина</h2>
       <p class="muted">Готово ${launchSteps.filter(step => step.done).length} из ${launchSteps.length} шагов.</p>
       <ol>${launchSteps.map(step => `<li><a href="${escape(manageLink(step.section))}">${step.done ? '✓ ' : ''}${step.label}</a>${step.done ? ' — готово' : ''}</li>`).join('')}</ol>
-      <p class="muted">Добавьте хотя бы один товар, видимый на витрине.</p></section>` : ''}
+      <p class="muted">Следующий шаг: ${escape(launchSteps.find(step=>!step.done)?.label||'Проверить витрину')}.</p></section>` : ''}
     ${owner && store.published ? `<div class="panel row"><a href="/shop/${store.slug}" target="_blank" rel="noopener">Открыть витрину ↗</a>
       <button id="copy-store-link" class="secondary" type="button">Скопировать ссылку</button><p id="copy-feedback" role="status" class="muted"></p></div>` : ''}
     ${activeSection === 'requests' ? `<section><div class="row manage-title"><h2>Заявки</h2><button id="refresh" class="secondary">Обновить</button></div>

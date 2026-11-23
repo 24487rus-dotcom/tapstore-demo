@@ -41,6 +41,7 @@ export async function demoApi(input,data) {
   const user=state.accounts.find(account => account.role === role && account.email === (sessionStorage.getItem('tapstore-demo-email') || role+'@demo.example') && account.enabled);
   const storeSlug = url.searchParams.get('store') || user?.slug || 'demo';
   const store=state.stores.find(store => store.slug === storeSlug);
+  state.moves ||= [];state.invoices ||= [];state.tickets ||= [];
   const write = value => { save(state); return value; };
   if(route === '/api/session') return {account:user || null};
   if(route === '/api/logout') { sessionStorage.removeItem('tapstore-demo-role');sessionStorage.removeItem('tapstore-demo-email');return {ok:true}; }
@@ -50,12 +51,14 @@ export async function demoApi(input,data) {
     sessionStorage.removeItem('tapstore-demo-email');
     return {ok:true,role:loginRole};
   }
+  const inquiry=route.match(/^\/api\/shops\/([a-z0-9-]+)\/support$/);
+  if(inquiry){if(!state.stores.some(s=>s.slug===inquiry[1]&&s.published))fail('Магазин не найден');if(!safe(data?.name)||!safe(data?.contact)||!safe(data?.message))fail('Укажите имя, контакт и вопрос');const ticket={id:nextId(state.tickets),slug:inquiry[1],name:safe(data.name).slice(0,60),contact:safe(data.contact).slice(0,120),message:safe(data.message).slice(0,1000),status:'new',assignee:'',created:new Date().toISOString()};state.tickets.push(ticket);return write({id:ticket.id});}
   const shop=route.match(/^\/api\/shops\/([a-z0-9-]+)(\/requests)?$/);
   if(shop) {
     const currentStore=state.stores.find(store => store.slug === shop[1] && store.published);
     if(!currentStore) fail('Витрина не опубликована',404);
     const products=state.products.filter(product => product.slug === shop[1] && product.active && !product.archived);
-    if(!data) return {store:currentStore,products:products.map(product => ({...product,price:salePrice(product),original_price:product.price}))};
+    if(!data) return {store:currentStore,products:products.map(product => ({...product,price:salePrice(product),original_price:product.price,in_stock:Number(!!product.in_stock && (product.stock_qty==null||product.stock_qty>(product.reserved_qty||0))),available:product.stock_qty==null?null:product.stock_qty-(product.reserved_qty||0)}))};
     const existing=state.requests.find(order => order.key === data.key);
     if(existing) return {id:existing.id,key:existing.key};
     const fulfillment=data.fulfillment || 'pickup';
@@ -68,7 +71,8 @@ export async function demoApi(input,data) {
       if(!Number.isInteger(item.qty)||item.qty<1||item.qty>20)fail('Проверьте количество');
       const options=(product.variants||'').split('|').filter(Boolean),variant=safe(item.variant).slice(0,60);
       if(options.length && !options.includes(variant))fail('Выберите вариант товара');
-      return {name:product.name+(variant?' · '+variant:''),variant,price:salePrice(product),qty:item.qty};
+      if(product.stock_qty!=null){if(product.stock_qty-(product.reserved_qty||0)<item.qty)fail('Недостаточно товара на складе',409);product.reserved_qty=(product.reserved_qty||0)+item.qty;}
+      return {id:item.id,name:product.name+(variant?' · '+variant:''),variant,price:salePrice(product),qty:item.qty};
     });
     const order={id:state.nextOrder++,key:data.key,slug:shop[1],name:data.name,fulfillment,contact:safe(data.contact).slice(0,120),delivery_address:safe(data.deliveryAddress).slice(0,240),comment:safe(data.comment).slice(0,500),status:'new',created:new Date().toISOString(),items,total:items.reduce((total,item) => total+item.price*item.qty,0),buyer_email:user?.role === 'buyer' ? user.email : null};
     state.requests.push(order);return write({id:order.id,key:order.key});
@@ -93,10 +97,28 @@ export async function demoApi(input,data) {
   const products=state.products.filter(product => product.slug === storeSlug && !product.archived);
   const orders=state.requests.filter(order => order.slug === storeSlug);
   if(route === '/api/manage') return {account:user,store,stores:state.stores,products,requests:orders.slice().reverse(),staff:user.role === 'owner' ? state.accounts.filter(account => account.role === 'seller' && account.slug === storeSlug) : []};
+  if(['/api/manage/inventory','/api/manage/invoices','/api/manage/support'].includes(route)){
+    if(!route.endsWith('/support')&&user.role!=='owner')fail('Раздел доступен владельцу',403);
+    if(!data){if(route.endsWith('/inventory'))return {products,moves:state.moves.filter(m=>m.slug===storeSlug).slice().reverse().map(m=>({...m,name:state.products.find(p=>p.id===m.product_id)?.name||'Товар'}))};if(route.endsWith('/invoices'))return {invoices:state.invoices.filter(i=>i.slug===storeSlug).slice().reverse()};return {tickets:state.tickets.filter(t=>t.slug===storeSlug).slice().reverse(),staff:state.accounts.filter(a=>a.enabled&&(a.slug===storeSlug||a.role==='owner'))};}
+    if(route.endsWith('/support')){const t=state.tickets.find(t=>t.id===data.id&&t.slug===storeSlug);if(!t)fail('Обращение не найдено');if(!['new','working','resolved'].includes(data.status))fail('Выберите статус обращения');if(user.role!=='owner'&&data.assignee&&data.assignee!==user.email)fail('Можно назначить только себя');if(data.assignee&&!state.accounts.some(a=>a.email===data.assignee&&a.enabled&&(a.slug===storeSlug||a.role==='owner')))fail('Сотрудник не найден');Object.assign(t,{status:data.status,assignee:data.assignee||''});return write({ok:true});}
+    if(route.endsWith('/inventory')){
+      if(state.moves.some(m=>m.slug===storeSlug&&m.key===data.key))return {ok:true};const p=products.find(p=>p.id===data.productId);if(!p)fail('Товар не найден');
+      if(!['enable','receipt','shipment'].includes(data.kind)||!Number.isInteger(data.qty)||data.qty<0||data.qty>1000000||(data.kind!=='enable'&&data.qty<1))fail('Проверьте количество');
+      if(data.kind==='enable'&&(p.stock_qty!=null||orders.some(o=>['new','accepted','ready'].includes(o.status)&&o.items.some(i=>i.id===p.id))))fail('Учёт уже включён или есть активные заявки на товар');
+      if(data.kind!=='enable'&&p.stock_qty==null)fail('Сначала включите складской учёт');if(data.kind==='shipment'&&p.stock_qty-(p.reserved_qty||0)<data.qty)fail('Недостаточно свободного остатка');
+      if(data.kind==='receipt'&&data.recordExpense&&(!Number.isInteger(data.unitCost)||data.unitCost<1||data.qty*data.unitCost>10000000000))fail('Проверьте закупочную цену');
+      p.stock_qty=data.kind==='enable'?data.qty:p.stock_qty+(data.kind==='receipt'?data.qty:-data.qty);p.reserved_qty ||= 0;
+      state.moves.push({id:nextId(state.moves),slug:storeSlug,key:data.key,product_id:p.id,kind:data.kind,qty:data.qty,note:safe(data.note).slice(0,300),created:new Date().toISOString()});
+      if(data.kind==='receipt'&&data.recordExpense)state.entries.push({id:state.nextEntry++,slug:storeSlug,kind:'expense',amount:data.qty*data.unitCost,category:'Закупки',note:p.name,date:today(),key:'stock-'+data.key});return write({ok:true});
+    }
+    if(data.action==='paid'){const i=state.invoices.find(i=>i.id===data.id&&i.slug===storeSlug);if(!i)fail('Счёт не найден');if(i.status==='paid')return {ok:true};i.status='paid';state.entries.push({id:state.nextEntry++,slug:storeSlug,kind:'income',amount:i.amount,category:'Оплата счёта',note:'Счёт № '+i.id,date:today(),key:'invoice-'+i.id});return write({ok:true});}
+    const existing=state.invoices.find(i=>i.slug===storeSlug&&i.key===data.key);if(existing)return {id:existing.id};if(!safe(data.customer)||!safe(data.description)||!Number.isInteger(data.amount)||data.amount<1||data.amount>10000000000)fail('Проверьте покупателя, назначение и сумму');const i={id:nextId(state.invoices),slug:storeSlug,key:data.key,customer:safe(data.customer).slice(0,180),description:safe(data.description).slice(0,500),amount:data.amount,status:'issued',created:new Date().toISOString()};state.invoices.push(i);return write({id:i.id});
+  }
   const status=route.match(/^\/api\/manage\/requests\/(\d+)$/);
   if(status) {
     const order=orders.find(order => order.id === Number(status[1]));
     if(!order || order.status !== data.previous) fail('Обновите список заявок',409);
+    if(['completed','cancelled'].includes(data.status))for(const item of order.items){const product=products.find(p=>p.id===item.id);if(product?.stock_qty!=null){product.reserved_qty=Math.max(0,(product.reserved_qty||0)-item.qty);if(data.status==='completed'){product.stock_qty-=item.qty;state.moves.push({id:nextId(state.moves),slug:storeSlug,product_id:product.id,kind:'shipment',qty:item.qty,note:'Заявка № '+order.id,created:new Date().toISOString()});}}}
     order.staff_note=safe(data.note).slice(0,500);order.status=data.status;if(data.status === 'completed') order.completed_at=new Date().toISOString();
     return write({ok:true});
   }
@@ -127,7 +149,7 @@ export async function demoApi(input,data) {
     return write({ok:true,id:product.id});
   }
   if(user.role !== 'owner') fail('Доступно владельцу',403);
-  if(route === '/api/manage/store') {if(data.published && !data.address) fail('Укажите адрес самовывоза');Object.assign(store,{name:data.name,address:data.address,description:safe(data.description).slice(0,600),contact:safe(data.contact).slice(0,120),hours:safe(data.hours).slice(0,180),template:['sky','lavender'].includes(data.template)?data.template:'sky',delivery_enabled:Number(data.deliveryEnabled===true),published:Number(data.published)});return write({ok:true});}
+  if(route === '/api/manage/store') {if(data.published && !data.address) fail('Укажите адрес самовывоза');Object.assign(store,{name:data.name,address:data.address,description:safe(data.description).slice(0,600),contact:safe(data.contact).slice(0,120),hours:safe(data.hours).slice(0,180),requisites:safe(data.requisites).slice(0,1200),template:['sky','lavender'].includes(data.template)?data.template:'sky',delivery_enabled:Number(data.deliveryEnabled===true),published:Number(data.published)});return write({ok:true});}
   if(route === '/api/manage/staff') {
     if(state.accounts.some(account => account.email === data.email)) fail('Эта почта уже используется');
     state.accounts.push({email:data.email,role:'seller',slug:storeSlug,enabled:1,can_edit_prices:Number(data.canEditPrices)});return write({ok:true});

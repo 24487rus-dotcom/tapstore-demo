@@ -52,6 +52,67 @@ TAPSTORE ДЛЯ НЕБОЛЬШОГО БИЗНЕСА|TAPSTORE FOR SMALL BUSINESS
 Доставка не подключена|Delivery is not enabled
 Укажите контакт и адрес доставки|Enter contact details and delivery address
 Разделитель — вертикальная черта. До 12 вариантов с общей ценой и наличием. Для разных цен создайте отдельные карточки.|Separate options with a vertical bar. Up to 12 options share one price and availability. Create separate products for different prices.
+Склад|Inventory
+Счета|Invoices
+Обращения покупателей|Customer inquiries
+Обращения|Inquiries
+На складе|On hand
+Резерв|Reserved
+Доступно|Available
+Не учитывается|Not tracked
+Складская операция|Stock movement
+Включить учёт · начальный остаток|Enable tracking · opening stock
+Начальный остаток|Opening stock
+Закупка / приход|Purchase / receipt
+Отгрузка вне заявок TapStore|Shipment outside TapStore requests
+Отгрузка|Shipment
+Количество, шт.|Quantity, units
+Закупочная цена за единицу, ₽|Purchase cost per unit, RUB
+Учесть закупку в расходах|Record purchase as an expense
+Поставщик / основание / комментарий|Supplier / reference / note
+Сохранить операцию|Save movement
+Складская операция сохранена.|Stock movement saved.
+История движений|Movement history
+Кол-во|Quantity
+Основание|Reference
+Покупатель и реквизиты|Customer and billing details
+Реквизиты для счетов|Invoice payment details
+Назначение платежа|Payment description
+Выставить счёт|Issue invoice
+Счёт выставлен.|Invoice issued.
+Оплачен|Paid
+Выставлен|Issued
+Открыть документ|View document
+Отметить оплату|Mark as paid
+Оплата учтена.|Payment recorded.
+Подтверждаете фактическое получение оплаты? Доход будет учтён в отчёте.|Confirm that payment was actually received? It will be recorded as income.
+Исполнитель / продавец|Supplier / seller
+Реквизиты продавца не заполнены. Заполните их в настройках витрины перед отправкой счёта.|Seller payment details are missing. Add them in the storefront settings before sending this invoice.
+Назначение|Description
+Налоги и условия оплаты: по реквизитам и договорённости сторон.|Taxes and payment terms: as specified in the payment details and agreement.
+Статус учёта|Recorded status
+Печать / PDF|Print / PDF
+Счёт|Invoice
+Новых|New
+Новое|New
+В работе|In progress
+Решено|Resolved
+Фильтр обращений|Filter inquiries
+Ответственный|Assigned to
+Не назначен|Unassigned
+Сохранить обращение|Save inquiry
+Обращение обновлено.|Inquiry updated.
+Обращение|Inquiry
+Есть вопрос магазину?|Have a question for the store?
+Оставьте обращение и контакт для ответа. Оно появится у сотрудников магазина.|Leave your question and contact details. The store team will see your inquiry.
+Контакт для ответа|Reply contact
+Ваш вопрос|Your question
+Отправить обращение|Send inquiry
+принято. Магазин свяжется по указанному контакту.|received. The store will use your contact details to reply.
+Доступно = на складе − в резерве. Заявка резервирует товар, отмена освобождает резерв, выдача списывает остаток. Учёт включается отдельно для каждого товара и применяется к новым заявкам.|Available = on hand minus reserved. Requests reserve stock, cancellation releases it, and completion deducts it. Tracking is enabled per product and applies to new requests.
+Выдачи через TapStore списываются автоматически. Повторно оформлять их как отгрузку не нужно. Остаток общий для всех вариантов одной карточки.|Completed TapStore requests deduct stock automatically. Do not record them again as shipments. All options of one product share stock.
+Вопросы из формы на витрине. Назначьте ответственного и отмечайте решённые вопросы. Ответ покупателю отправляйте самостоятельно по указанному контакту.|Inquiries from your storefront. Assign a team member and track resolution. Reply to the customer separately using their contact details.
+Создайте счёт, проверьте документ и распечатайте или сохраните как PDF. Отметка об оплате добавит доход в финансовый отчёт один раз. Для заявок TapStore используйте выдачу: не учитывайте одну продажу одновременно как заявку и отдельный счёт.|Create an invoice, review it, then print or save as PDF. Marking it paid adds income once. For TapStore orders use request completion: do not record the same sale as both an order and a separate invoice.
 Все товары|All products
 Закуски|Snacks
 Напитки|Drinks

@@ -4,6 +4,7 @@ import {displayMoney,demoLocale,translate,setupI18n} from './i18n.js';
 import {demoApi,setupDemo} from './state.js';
 setupDemo();
 setupI18n();
+import {bindProductTools,recordProductTrial,pilotPanel} from './product-tools.js';
 const page = document.querySelector('#page');
 const notice = document.querySelector('#notice');
 const escape = value => String(value ?? '').replace(/[&<>"']/g,char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -154,7 +155,7 @@ function photoBase64(file) {
 function productForm(product = {name:'',price:'',active:1}, photoLink = '', canEditPrice = true) {
   return `<form class="product-form line" data-id="${product.id ?? ''}">
     <label>Название<input name="name" value="${escape(product.name)}" maxlength="80" required></label>
-    <label>Варианты товара<input name="variants" value="${escape(product.variants || '')}" maxlength="731" placeholder="Маленький | Большой"></label><p class="muted">Разделитель — вертикальная черта. До 12 вариантов с общей ценой и наличием. Для разных цен создайте отдельные карточки.</p>
+    <label>Описание товара<textarea name="description" maxlength="600" rows="3">${escape(product.description || '')}</textarea></label><label>Категория<select name="category">${Object.entries({snacks:'Закуски',drinks:'Напитки',accessories:'Аксессуары',other:'Другое'}).map(([id,label])=>'<option value="'+id+'" '+(id===(product.category||categoryOf(product))?'selected':'')+'>'+label+'</option>').join('')}</select></label><label>Варианты товара<input name="variants" value="${escape(product.variants || '')}" maxlength="731" placeholder="Маленький | Большой"></label><p class="muted">Разделитель — вертикальная черта. До 12 вариантов с общей ценой и наличием. Для разных цен создайте отдельные карточки.</p>
     <label>Цена, ₽<input name="price" type="number" min="1" max="100000" value="${product.price}" ${canEditPrice ? 'required' : 'readonly'}></label>
     <label>Скидка, %<input name="discount" type="number" min="0" max="99" step="1" value="${product.discount ?? 0}" ${canEditPrice ? 'required' : 'readonly'}></label>
     ${canEditPrice ? '' : '<p class="muted">Для изменения цены и скидки владелец должен включить вам разрешение во вкладке «Сотрудники».</p>'}
@@ -234,7 +235,7 @@ async function manage() {
       <label><input name="published" type="checkbox" ${store.published ? 'checked' : ''}> Опубликовать витрину</label>
       <div class="row"><button>Сохранить</button>${store.published ? `<a href="/shop/${store.slug}">Открыть витрину ↗</a>` : ''}</div></form>` : ''}
     ${['inventory','invoices','support'].includes(activeSection) ? '<section id=operations></section>' : ''}
-    ${activeSection === 'catalog' ? `<section class="panel"><h2>Каталог</h2><details><summary>Добавить товар</summary>${productForm()}</details>
+    ${activeSection === 'catalog' ? `<section class="panel"><div class="row"><h2>Каталог</h2><button type="button" class="secondary" id="quick-add-product">Новый товар</button></div>${pilotPanel()}<details id="new-product"><summary>Добавить товар</summary>${productForm()}</details>
       ${products.map(product => `<details class="line"><summary>${escape(product.name)} · ${money(product.price)}${product.discount ? ' · скидка '+product.discount+'%' : ''}${product.in_stock ? '' : ' · нет в наличии'}${product.active ? '' : ' · скрыт'}</summary>
         ${productForm(product,storeApi('/photos/'+product.id),owner || account.can_edit_prices === 1)}</details>`).join('')}</section>` : ''}
     ${activeSection === 'photos' ? `<section><h2>Фото товаров</h2><p class="muted">JPG, PNG или WebP, до 2 МБ на товар.</p>
@@ -461,8 +462,8 @@ async function manage() {
       await manage();
       notice.textContent = 'Товар удалён.';
     } else {
-      const image = data.photo?.size ? await photoBase64(data.photo) : undefined;
-      const saved = await api(storeApi('/products'),{name:data.name,variants:data.variants,price:Number(data.price),discount:Number(data.discount),inStock:data.inStock==='on',active:data.active==='on',allowed:data.allowed==='on',id});
+      const image = form._compressedPhoto || (data.photo?.size ? await photoBase64(data.photo) : undefined);
+      const saved = await api(storeApi('/products'),{name:data.name,description:data.description,category:data.category,variants:data.variants,price:Number(data.price),discount:Number(data.discount),inStock:data.inStock==='on',active:data.active==='on',allowed:data.allowed==='on',id});
       const productId = id ?? saved.id;
       form.dataset.id = productId;
       if (image !== undefined || data.removePhoto === 'on') {
@@ -472,10 +473,13 @@ async function manage() {
           throw new Error('Товар сохранён. Фото не сохранено: '+error.message+' Повторите сохранение.');
         }
       }
+      recordProductTrial(form,productId);
       await manage();
       notice.textContent = id === null ? 'Товар добавлен.' : 'Товар сохранён.';
     }
   });
+  bindProductTools();
+  document.querySelector('#quick-add-product')?.addEventListener('click',()=>{const details=document.querySelector('#new-product');details.open=true;details.scrollIntoView({behavior:'smooth'});});
   const staff = document.querySelector('#staff');
   if (staff) handle(staff,async data => {
     await api(storeApi('/staff'),{...data,canEditPrices:data.canEditPrices === 'on'});
@@ -485,6 +489,7 @@ async function manage() {
 }
 const randomKey = () => Array.from(crypto.getRandomValues(new Uint8Array(24)),n => n.toString(16).padStart(2,'0')).join('');
 function categoryOf(product) {
+  if(['snacks','drinks','accessories','other'].includes(product.category))return product.category;
   if (/лимонад|напит|сок|вода|soda|juice/i.test(product.name)) return 'drinks';
   if (/бокал|стакан|аксессуар|glass/i.test(product.name)) return 'accessories';
   if (/сыр|орех|чипс|сухар|снек|закуск|nuts|cheese/i.test(product.name)) return 'snacks';
@@ -522,7 +527,7 @@ async function storefront(slug) {
   const categoryLabels = {all:'Все товары',snacks:'Закуски',drinks:'Напитки',accessories:'Аксессуары',other:'Другое'};
   page.innerHTML = `<section class="hero store-hero template-${store.template==='lavender'?'lavender':'sky'}"><div><span class="eyebrow">Витрина магазина / Самовывоз</span><h1>${escape(store.name)}</h1><p class="store-description">${escape(store.description || 'Выберите любимое. Заберите по пути.')}</p><div class="store-details"><p>${escape(store.address)}</p>${store.hours?'<p>Часы работы: '+escape(store.hours)+'</p>':''}${store.contact?'<p>Контакты: '+escape(store.contact)+'</p>':''}</div></div><div class="pickup-note"><strong>Закажите заранее</strong><p>Дождитесь статуса «Готова к выдаче» и приходите за заявкой.</p></div></section>
     <div class="store-layout"><section><div class="catalog-top"><h2>Каталог</h2><span class="muted" id="product-count">${products.length}</span></div><div class="catalog-tools"><label class="catalog-search"><input id="catalog-search" type="search" placeholder="Найти в магазине" aria-label="Поиск товаров"></label></div><div class="category-tabs" role="group" aria-label="Категории товаров">${Object.entries(categoryLabels).filter(([id])=>id==='all'||products.some(p=>categoryOf(p)===id)).map(([id,label])=>`<button type="button" data-category="${id}" aria-pressed="${id==='all'}">${label}</button>`).join('')}</div><div class="grid product-grid">
-    ${products.map(p => `<article class="panel product-card${p.in_stock?'':' is-unavailable'}" data-product="${p.id}">${p.discount ? `<span class="discount-badge">−${p.discount}%</span>` : ''}<img class="product-photo" src="${p.has_photo ? endpoint+'/photos/'+p.id : productIllustration(p)}" alt="${p.has_photo ? escape(p.name) : 'Иллюстрация категории товара'}" loading="lazy"><div class="product-info"><span class="product-category">${categoryLabels[categoryOf(p)]}</span><h3>${escape(p.name)}</h3><div class="row"><b class="product-price">${money(p.price)}</b>${p.discount ? `<del class="muted">${money(p.original_price)}</del>` : ''}</div>${p.variants?'<label class="variant-picker">Вариант<select data-variant="'+p.id+'">'+p.variants.split('|').filter(Boolean).map(v=>'<option>'+escape(v)+'</option>').join('')+'</select></label>':''}${p.available!=null?'<span class=muted>Доступно: '+p.available+'</span>':''}<button data-add="${p.id}" ${p.in_stock ? '' : 'disabled'}>${p.in_stock ? 'Добавить' : 'Нет в наличии'}</button></div></article>`).join('') || '<p>Ассортимент скоро появится.</p>'}</div><p id="catalog-empty" class="empty-state" hidden>Ничего не найдено. Попробуйте другой запрос.</p></section>
+    ${products.map(p => `<article class="panel product-card${p.in_stock?'':' is-unavailable'}" data-product="${p.id}">${p.discount ? `<span class="discount-badge">−${p.discount}%</span>` : ''}<img class="product-photo" src="${p.has_photo ? endpoint+'/photos/'+p.id : productIllustration(p)}" alt="${p.has_photo ? escape(p.name) : 'Иллюстрация категории товара'}" loading="lazy"><div class="product-info"><span class="product-category">${categoryLabels[categoryOf(p)]}</span><h3>${escape(p.name)}</h3>${p.description?'<p class="product-description">'+escape(p.description)+'</p>':''}<div class="row"><b class="product-price">${money(p.price)}</b>${p.discount ? `<del class="muted">${money(p.original_price)}</del>` : ''}</div>${p.variants?'<label class="variant-picker">Вариант<select data-variant="'+p.id+'">'+p.variants.split('|').filter(Boolean).map(v=>'<option>'+escape(v)+'</option>').join('')+'</select></label>':''}${p.available!=null?'<span class=muted>Доступно: '+p.available+'</span>':''}<button data-add="${p.id}" ${p.in_stock ? '' : 'disabled'}>${p.in_stock ? 'Добавить' : 'Нет в наличии'}</button></div></article>`).join('') || '<p>Ассортимент скоро появится.</p>'}</div><p id="catalog-empty" class="empty-state" hidden>Ничего не найдено. Попробуйте другой запрос.</p></section>
     <form class="panel cart-panel" id="checkout"><h2>Ваша корзина</h2><div id="cart-items"></div>
     <p class="row cart-total"><b>Итого</b><strong id="total"></strong></p><label>Имя для выдачи<input name="name" maxlength="60" autocomplete="given-name" placeholder="Как к вам обращаться?" required></label>
     <label>Способ получения<select name="fulfillment" id="fulfillment"><option value="pickup">Самовывоз</option>${store.delivery_enabled?'<option value="delivery">Запрос доставки</option>':''}</select></label><label>Телефон или контакт<input name="contact" maxlength="120" autocomplete="tel"></label><label id="delivery-field" hidden>Адрес доставки<input name="deliveryAddress" maxlength="240" autocomplete="street-address"></label><label>Комментарий<textarea name="comment" maxlength="500" rows="3" placeholder="Пожелания к заявке"></textarea></label><p id="delivery-caption" class="muted" hidden>Это запрос доставки. Магазин согласует стоимость и время отдельно. Итог ниже — только товары.</p><button id="submit-request">Отправить заявку</button><p class="cart-caption">Самовывоз после подтверждения готовности.</p></form></div><button type="button" class="mobile-cart" id="mobile-cart" hidden></button><section class="panel customer-support"><h2>Есть вопрос магазину?</h2><p class="muted">Оставьте обращение и контакт для ответа. Оно появится у сотрудников магазина.</p><form id="support-form"><label>Ваше имя<input name="name" maxlength="60" required></label><label>Контакт для ответа<input name="contact" maxlength="120" required></label><label>Ваш вопрос<textarea name="message" maxlength="1000" required></textarea></label><button>Отправить обращение</button><p id="support-feedback" role="status"></p></form></section>`;

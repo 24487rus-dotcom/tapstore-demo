@@ -144,7 +144,7 @@ export async function demoApi(input,data) {
     }
     if(creating) {product={id:state.nextProduct++,slug:storeSlug};state.products.push(product);}
     const variants=safe(data.variants).split('|').map(v=>v.trim()).filter(Boolean);if(variants.length>12||variants.some(v=>v.length>60)||new Set(variants).size!==variants.length)fail('До 12 уникальных вариантов, каждый до 60 символов');
-    Object.assign(product,{variants:variants.join('|'),name:data.name,active:Number(data.active),in_stock:Number(data.inStock)});
+    Object.assign(product,{description:safe(data.description).slice(0,600),category:['snacks','drinks','accessories','other'].includes(data.category)?data.category:'',variants:variants.join('|'),name:data.name,active:Number(data.active),in_stock:Number(data.inStock)});
     if(creating || user.role === 'owner' || user.can_edit_prices) Object.assign(product,{price:data.price,discount:data.discount || 0});
     return write({ok:true,id:product.id});
   }

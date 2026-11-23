@@ -113,6 +113,34 @@ TAPSTORE ДЛЯ НЕБОЛЬШОГО БИЗНЕСА|TAPSTORE FOR SMALL BUSINESS
 Выдачи через TapStore списываются автоматически. Повторно оформлять их как отгрузку не нужно. Остаток общий для всех вариантов одной карточки.|Completed TapStore requests deduct stock automatically. Do not record them again as shipments. All options of one product share stock.
 Вопросы из формы на витрине. Назначьте ответственного и отмечайте решённые вопросы. Ответ покупателю отправляйте самостоятельно по указанному контакту.|Inquiries from your storefront. Assign a team member and track resolution. Reply to the customer separately using their contact details.
 Создайте счёт, проверьте документ и распечатайте или сохраните как PDF. Отметка об оплате добавит доход в финансовый отчёт один раз. Для заявок TapStore используйте выдачу: не учитывайте одну продажу одновременно как заявку и отдельный счёт.|Create an invoice, review it, then print or save as PDF. Marking it paid adds income once. For TapStore orders use request completion: do not record the same sale as both an order and a separate invoice.
+Установить|Install
+Новый товар|New product
+Ещё|More
+Быстрые действия|Quick actions
+Разделы магазина|Store sections
+Описание товара|Product description
+Сфотографировать → проверить → сохранить|Photograph → review → save
+Выберите фото ниже. Подготовим черновик названия, описания и категории. Цену и наличие укажите самостоятельно.|Choose a photo below. We will draft a name, description and category. Set the price and availability yourself.
+Отправить это фото в OpenAI для создания черновика. Не загружайте документы и личные данные.|Send this photo to OpenAI to draft the product. Do not upload documents or personal information.
+Создать черновик по фото|Draft product from photo
+Проверяем доступность распознавания…|Checking recognition availability…
+Распознавание пока выключено. Карточку можно заполнить вручную.|Recognition is turned off. You can fill in the product manually.
+Распознавание недоступно. Карточку можно заполнить вручную.|Recognition is unavailable. You can fill in the product manually.
+Распознавание доступно. Цена и публикация — только после вашей проверки.|Recognition is available. Price and publishing require your review.
+Подтвердите отправку выбранного фото в OpenAI.|Confirm sending this photo to OpenAI.
+Создаём черновик…|Creating draft…
+Начать новый тест|Start a new trial
+Скачать CSV|Download CSV
+Проверка на 10 товарах|10-product trial
+В этом браузере|In this browser
+Вручную|Manual
+С ИИ|With AI
+Оценка API|Estimated API cost
+нет данных|no data
+TapStore на главном экране|TapStore on your home screen
+Понятно|Got it
+Закрыть|Close
+Выбранное фото товара|Selected product photo
 Все товары|All products
 Закуски|Snacks
 Напитки|Drinks

@@ -11,10 +11,10 @@ function navigateDemo(hash) {
 }
 function seed() {
   const created = new Date().toISOString();
-  return {stores:[{slug:'demo',name:'Хмельная лавка · демо',address:'Самара, ул. Демонстрационная, 12',published:1}],
+  return {stores:[{slug:'demo',name:'Хмельная лавка · демо',address:'Самара, ул. Демонстрационная, 12',description:'Небольшой магазин с подборкой закусок, напитков и подарков. Выберите товары заранее — мы подготовим их к визиту.',contact:'+7 (000) 000-00-00 · демо',hours:'Ежедневно 10:00–22:00',template:'sky',delivery_enabled:1,published:1}],
     accounts:Object.keys(roles).map(accountFor),
     products:[{id:1,slug:'demo',name:'Сырные палочки',price:240,discount:10,active:1,in_stock:1},
-      {id:2,slug:'demo',name:'Лимонад «Лимон и мята»',price:160,discount:0,active:1,in_stock:1},
+      {id:2,slug:'demo',name:'Лимонад «Лимон и мята»',variants:'Охлаждённый|Комнатной температуры',price:160,discount:0,active:1,in_stock:1},
       {id:3,slug:'demo',name:'Ореховый микс',price:290,discount:15,active:1,in_stock:1},
       {id:4,slug:'demo',name:'Подарочный бокал',price:650,discount:0,active:1,in_stock:0}],
     requests:[{id:1,slug:'demo',name:'Анна',status:'new',created,items:[{name:'Сырные палочки',price:216,qty:2}],total:432},
@@ -58,12 +58,19 @@ export async function demoApi(input,data) {
     if(!data) return {store:currentStore,products:products.map(product => ({...product,price:salePrice(product),original_price:product.price}))};
     const existing=state.requests.find(order => order.key === data.key);
     if(existing) return {id:existing.id,key:existing.key};
+    const fulfillment=data.fulfillment || 'pickup';
+    if(!['pickup','delivery'].includes(fulfillment) || (fulfillment==='delivery' && !currentStore.delivery_enabled))fail('Доставка не подключена');
+    if(fulfillment==='delivery' && (!safe(data.contact) || !safe(data.deliveryAddress)))fail('Укажите контакт и адрес доставки');
+    if(!Array.isArray(data.items) || !data.items.length || !safe(data.name))fail('Укажите имя и добавьте товары');
     const items=data.items.map(item => {
       const product=products.find(product => product.id === item.id);
       if(!product || !product.in_stock || item.price !== salePrice(product)) fail('Цена или наличие изменились. Обновите витрину.',409);
-      return {name:product.name,price:salePrice(product),qty:item.qty};
+      if(!Number.isInteger(item.qty)||item.qty<1||item.qty>20)fail('Проверьте количество');
+      const options=(product.variants||'').split('|').filter(Boolean),variant=safe(item.variant).slice(0,60);
+      if(options.length && !options.includes(variant))fail('Выберите вариант товара');
+      return {name:product.name+(variant?' · '+variant:''),variant,price:salePrice(product),qty:item.qty};
     });
-    const order={id:state.nextOrder++,key:data.key,slug:shop[1],name:data.name,status:'new',created:new Date().toISOString(),items,total:items.reduce((total,item) => total+item.price*item.qty,0),buyer_email:user?.role === 'buyer' ? user.email : null};
+    const order={id:state.nextOrder++,key:data.key,slug:shop[1],name:data.name,fulfillment,contact:safe(data.contact).slice(0,120),delivery_address:safe(data.deliveryAddress).slice(0,240),comment:safe(data.comment).slice(0,500),status:'new',created:new Date().toISOString(),items,total:items.reduce((total,item) => total+item.price*item.qty,0),buyer_email:user?.role === 'buyer' ? user.email : null};
     state.requests.push(order);return write({id:order.id,key:order.key});
   }
   const track=route.match(/^\/api\/track\/([a-f0-9]+)$/);
@@ -90,7 +97,7 @@ export async function demoApi(input,data) {
   if(status) {
     const order=orders.find(order => order.id === Number(status[1]));
     if(!order || order.status !== data.previous) fail('Обновите список заявок',409);
-    order.status=data.status;if(data.status === 'completed') order.completed_at=new Date().toISOString();
+    order.staff_note=safe(data.note).slice(0,500);order.status=data.status;if(data.status === 'completed') order.completed_at=new Date().toISOString();
     return write({ok:true});
   }
   const photo=route.match(/^\/api\/manage\/photos\/(\d+)$/);
@@ -114,12 +121,13 @@ export async function demoApi(input,data) {
       if(!Number.isInteger(data.price) || data.price<1 || data.price>100000 || data.discount<0 || data.discount>99) fail('Проверьте цену и скидку');
     }
     if(creating) {product={id:state.nextProduct++,slug:storeSlug};state.products.push(product);}
-    Object.assign(product,{name:data.name,active:Number(data.active),in_stock:Number(data.inStock)});
+    const variants=safe(data.variants).split('|').map(v=>v.trim()).filter(Boolean);if(variants.length>12||variants.some(v=>v.length>60)||new Set(variants).size!==variants.length)fail('До 12 уникальных вариантов, каждый до 60 символов');
+    Object.assign(product,{variants:variants.join('|'),name:data.name,active:Number(data.active),in_stock:Number(data.inStock)});
     if(creating || user.role === 'owner' || user.can_edit_prices) Object.assign(product,{price:data.price,discount:data.discount || 0});
     return write({ok:true,id:product.id});
   }
   if(user.role !== 'owner') fail('Доступно владельцу',403);
-  if(route === '/api/manage/store') {if(data.published && !data.address) fail('Укажите адрес самовывоза');Object.assign(store,{name:data.name,address:data.address,published:Number(data.published)});return write({ok:true});}
+  if(route === '/api/manage/store') {if(data.published && !data.address) fail('Укажите адрес самовывоза');Object.assign(store,{name:data.name,address:data.address,description:safe(data.description).slice(0,600),contact:safe(data.contact).slice(0,120),hours:safe(data.hours).slice(0,180),template:['sky','lavender'].includes(data.template)?data.template:'sky',delivery_enabled:Number(data.deliveryEnabled===true),published:Number(data.published)});return write({ok:true});}
   if(route === '/api/manage/staff') {
     if(state.accounts.some(account => account.email === data.email)) fail('Эта почта уже используется');
     state.accounts.push({email:data.email,role:'seller',slug:storeSlug,enabled:1,can_edit_prices:Number(data.canEditPrices)});return write({ok:true});

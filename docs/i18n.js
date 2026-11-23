@@ -20,6 +20,38 @@ TAPSTORE ДЛЯ НЕБОЛЬШОГО БИЗНЕСА|TAPSTORE FOR SMALL BUSINESS
 Иллюстративные данные, не показатели реального бизнеса|Illustrative data, not actual business results
 Иллюстрация графика заявок|Illustrative request chart
 К выдаче|Ready for pickup
+Описание бизнеса|Business description
+Контакты|Contact details
+Часы работы|Opening hours
+Шаблон сайта|Storefront template
+Голубой · Небо|Blue · Sky
+Лавандовый · Студия|Lavender · Studio
+Принимать запросы доставки|Accept delivery requests
+Стоимость и время доставки согласовываются с покупателем. Курьерские службы не подключены.|Delivery price and timing are agreed with the customer. Courier services are not connected.
+Варианты товара|Product options
+Разделяйте варианты символом|Separate options with
+Маленький|Small
+Большой|Large
+До 12 вариантов. Цена и наличие общие. Для разных цен создайте отдельные карточки.|Up to 12 options share one price and availability. Create separate products for different prices.
+Вариант|Option
+Запрос доставки|Delivery request
+Способ получения|Fulfillment method
+Телефон или контакт|Phone or contact
+Адрес доставки|Delivery address
+Комментарий|Comment
+Пожелания к заявке|Your request preferences
+Это запрос доставки. Магазин согласует стоимость и время отдельно. Итог ниже — только товары.|This is a delivery request. The store will confirm the delivery price and timing separately. The total below includes products only.
+Комментарий покупателю|Message to customer
+Ваш комментарий|Your comment
+Ответ магазина|Store response
+Новые заявки|New requests
+Контакт|Contact
+Адрес|Address
+Покупатель|Customer
+Выберите вариант товара|Select a product option
+Доставка не подключена|Delivery is not enabled
+Укажите контакт и адрес доставки|Enter contact details and delivery address
+Разделитель — вертикальная черта. До 12 вариантов с общей ценой и наличием. Для разных цен создайте отдельные карточки.|Separate options with a vertical bar. Up to 12 options share one price and availability. Create separate products for different prices.
 Все товары|All products
 Закуски|Snacks
 Напитки|Drinks

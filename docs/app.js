@@ -16,6 +16,7 @@ const path = (location.hash.slice(1).split('?')[0] || '/').replace(/\/$/,'') || 
 const fields = form => Object.fromEntries(new FormData(form));
 const list = items => items.map(item => `<li>${escape(item.name)} × ${item.qty}</li>`).join('');
 const cart = new Map();
+const selectedVariants = new Map();
 const connection = document.createElement('div');
 connection.className = 'connection-banner';
 connection.setAttribute('role','status');
@@ -136,8 +137,8 @@ function renderRequests(requests) {
     const step = steps[order.status];
     return `<article class="panel request-card"><div class="row"><h3>Заявка № ${order.id}</h3><span class="pill status-${escape(order.status)}">${labels[order.status]}</span></div>
       <p class="request-meta">${escape(order.name)} · ${escape(new Date(order.created).toLocaleString(demoLocale))}</p>
-      <ul>${list(order.items)}</ul><p class="request-total"><b>${money(order.total)}</b></p>
-      ${step ? `<form class="row" data-request="${order.id}" data-status="${order.status}"><button name="status" value="${step[0]}">${step[1]}</button><button class="secondary" name="status" value="cancelled">Отменить</button></form>` : ''}</article>`;
+      <div class="order-context"><b>${order.fulfillment==='delivery'?'Запрос доставки':'Самовывоз'}</b>${order.contact?'<p>Контакт: '+escape(order.contact)+'</p>':''}${order.delivery_address?'<p>Адрес: '+escape(order.delivery_address)+'</p>':''}${order.comment?'<p>Покупатель: '+escape(order.comment)+'</p>':''}${order.staff_note?'<p>Ответ магазина: '+escape(order.staff_note)+'</p>':''}</div><ul>${list(order.items)}</ul><p class="request-total"><b>${money(order.total)}</b></p>
+      ${step ? `<form class="row" data-request="${order.id}" data-status="${order.status}"><label class="order-note">Комментарий покупателю<input name="note" maxlength="500" value="${escape(order.staff_note || '')}"></label><button name="status" value="${step[0]}">${step[1]}</button><button class="secondary" name="status" value="cancelled">Отменить</button></form>` : ''}</article>`;
   }).join('') || '<div class="empty-state"><h3>Здесь пока спокойно</h3><p>В этом статусе нет заявок. Новые появятся автоматически.</p></div>';
 }
 function photoBase64(file) {
@@ -153,6 +154,7 @@ function photoBase64(file) {
 function productForm(product = {name:'',price:'',active:1}, photoLink = '', canEditPrice = true) {
   return `<form class="product-form line" data-id="${product.id ?? ''}">
     <label>Название<input name="name" value="${escape(product.name)}" maxlength="80" required></label>
+    <label>Варианты товара<input name="variants" value="${escape(product.variants || '')}" maxlength="731" placeholder="Маленький | Большой"></label><p class="muted">Разделитель — вертикальная черта. До 12 вариантов с общей ценой и наличием. Для разных цен создайте отдельные карточки.</p>
     <label>Цена, ₽<input name="price" type="number" min="1" max="100000" value="${product.price}" ${canEditPrice ? 'required' : 'readonly'}></label>
     <label>Скидка, %<input name="discount" type="number" min="0" max="99" step="1" value="${product.discount ?? 0}" ${canEditPrice ? 'required' : 'readonly'}></label>
     ${canEditPrice ? '' : '<p class="muted">Для изменения цены и скидки владелец должен включить вам разрешение во вкладке «Сотрудники».</p>'}
@@ -228,7 +230,7 @@ async function manage() {
     <div id="requests"></div></section>` : ''}
     ${activeSection === 'storefront' ? `<form id="settings" class="panel manage-settings"><h2>Витрина</h2>
       <label>Название<input name="name" value="${escape(store.name)}" maxlength="80" required></label>
-      <label>Адрес самовывоза<input name="address" maxlength="180" value="${escape(store.address)}"></label>
+      <label>Описание бизнеса<textarea name="description" maxlength="600" rows="4">${escape(store.description || '')}</textarea></label><label>Контакты<input name="contact" value="${escape(store.contact || '')}" maxlength="120"></label><label>Часы работы<input name="hours" value="${escape(store.hours || '')}" maxlength="180" placeholder="Пн–Вс 10:00–22:00"></label><label>Шаблон сайта<select name="template"><option value="sky">Голубой · Небо</option><option value="lavender" ${store.template==='lavender'?'selected':''}>Лавандовый · Студия</option></select></label><label><input type="checkbox" name="deliveryEnabled" ${store.delivery_enabled?'checked':''}> Принимать запросы доставки</label><p class="muted">Стоимость и время доставки согласовываются с покупателем. Курьерские службы не подключены.</p><label>Адрес самовывоза<input name="address" maxlength="180" value="${escape(store.address)}"></label>
       <label><input name="published" type="checkbox" ${store.published ? 'checked' : ''}> Опубликовать витрину</label>
       <div class="row"><button>Сохранить</button>${store.published ? `<a href="/shop/${store.slug}">Открыть витрину ↗</a>` : ''}</div></form>` : ''}
     ${activeSection === 'catalog' ? `<section class="panel"><h2>Каталог</h2><details><summary>Добавить товар</summary>${productForm()}</details>
@@ -405,6 +407,8 @@ async function manage() {
       try {
         const latest = (await api(storeApi(''))).requests;
         if (!changingOrder && JSON.stringify(latest) !== JSON.stringify(orders)) {
+          const incoming=latest.filter(order=>order.status==='new'&&!orders.some(old=>old.id===order.id));
+          if(incoming.length){notice.textContent='Новые заявки: '+incoming.map(o=>'№ '+o.id).join(', ');document.title='Новая заявка · TapStore';}
           orders = latest;
           drawOrders();
         }
@@ -418,11 +422,11 @@ async function manage() {
     try { await refreshTask; } finally { refreshTask = null; }
   }
   function bindOrders() {
-    for (const form of document.querySelectorAll('[data-request]')) handle(form,async (_,button) => {
+    for (const form of document.querySelectorAll('[data-request]')) handle(form,async (data,button) => {
       if (changingOrder) return;
       changingOrder = true;
       try {
-        await api(storeApi('/requests/'+form.dataset.request),{previous:form.dataset.status,status:button.value});
+        await api(storeApi('/requests/'+form.dataset.request),{previous:form.dataset.status,status:button.value,note:data.note});
         if (refreshTask) await refreshTask;
         orders = (await api(storeApi(''))).requests;
         drawOrders();
@@ -443,7 +447,7 @@ async function manage() {
   });
   const settings = document.querySelector('#settings');
   if (settings) handle(settings,async data => {
-    await api(storeApi('/store'),{...data,published:data.published==='on'});
+    await api(storeApi('/store'),{...data,published:data.published==='on',deliveryEnabled:data.deliveryEnabled==='on'});
     await manage();
     notice.textContent = 'Настройки сохранены.';
   });
@@ -456,7 +460,7 @@ async function manage() {
       notice.textContent = 'Товар удалён.';
     } else {
       const image = data.photo?.size ? await photoBase64(data.photo) : undefined;
-      const saved = await api(storeApi('/products'),{name:data.name,price:Number(data.price),discount:Number(data.discount),inStock:data.inStock==='on',active:data.active==='on',allowed:data.allowed==='on',id});
+      const saved = await api(storeApi('/products'),{name:data.name,variants:data.variants,price:Number(data.price),discount:Number(data.discount),inStock:data.inStock==='on',active:data.active==='on',allowed:data.allowed==='on',id});
       const productId = id ?? saved.id;
       form.dataset.id = productId;
       if (image !== undefined || data.removePhoto === 'on') {
@@ -493,7 +497,7 @@ function productIllustration(product) {
 }
 function renderCart() {
   const entries = catalog.filter(p => cart.has(p.id));
-  document.querySelector('#cart-items').innerHTML = entries.map(p => `<label class="row line">${escape(p.name)} · ${money(p.price)}<input class="quantity" aria-label="Количество: ${escape(p.name)}" type="number" min="0" max="20" value="${cart.get(p.id)}" data-qty="${p.id}" required></label>`).join('') || '<p>Добавьте товары из каталога.</p>';
+  document.querySelector('#cart-items').innerHTML = entries.map(p => `<label class="row line">${escape(p.name)}${selectedVariants.get(p.id)?' · '+escape(selectedVariants.get(p.id)):''} · ${money(p.price)}<input class="quantity" aria-label="Количество: ${escape(p.name)}" type="number" min="0" max="20" value="${cart.get(p.id)}" data-qty="${p.id}" required></label>`).join('') || '<p>Добавьте товары из каталога.</p>';
   const updateTotal = () => { document.querySelector('#total').textContent = money(entries.reduce((n,p) => n + p.price*(cart.get(p.id)||0),0)); };
   updateTotal();
   const count = [...cart.values()].reduce((sum,qty)=>sum+qty,0);
@@ -514,12 +518,12 @@ async function storefront(slug) {
   let attempt = '';
   let signature = '';
   const categoryLabels = {all:'Все товары',snacks:'Закуски',drinks:'Напитки',accessories:'Аксессуары',other:'Другое'};
-  page.innerHTML = `<section class="hero store-hero"><div><span class="eyebrow">Витрина магазина / Самовывоз</span><h1>${escape(store.name)}</h1><p class="store-description">Выберите любимое. Заберите по пути.</p><p>${escape(store.address)}</p></div><div class="pickup-note"><strong>Закажите заранее</strong><p>Дождитесь статуса «Готова к выдаче» и приходите за заявкой.</p></div></section>
+  page.innerHTML = `<section class="hero store-hero template-${store.template==='lavender'?'lavender':'sky'}"><div><span class="eyebrow">Витрина магазина / Самовывоз</span><h1>${escape(store.name)}</h1><p class="store-description">${escape(store.description || 'Выберите любимое. Заберите по пути.')}</p><div class="store-details"><p>${escape(store.address)}</p>${store.hours?'<p>Часы работы: '+escape(store.hours)+'</p>':''}${store.contact?'<p>Контакты: '+escape(store.contact)+'</p>':''}</div></div><div class="pickup-note"><strong>Закажите заранее</strong><p>Дождитесь статуса «Готова к выдаче» и приходите за заявкой.</p></div></section>
     <div class="store-layout"><section><div class="catalog-top"><h2>Каталог</h2><span class="muted" id="product-count">${products.length}</span></div><div class="catalog-tools"><label class="catalog-search"><input id="catalog-search" type="search" placeholder="Найти в магазине" aria-label="Поиск товаров"></label></div><div class="category-tabs" role="group" aria-label="Категории товаров">${Object.entries(categoryLabels).filter(([id])=>id==='all'||products.some(p=>categoryOf(p)===id)).map(([id,label])=>`<button type="button" data-category="${id}" aria-pressed="${id==='all'}">${label}</button>`).join('')}</div><div class="grid product-grid">
-    ${products.map(p => `<article class="panel product-card${p.in_stock?'':' is-unavailable'}" data-product="${p.id}">${p.discount ? `<span class="discount-badge">−${p.discount}%</span>` : ''}<img class="product-photo" src="${p.has_photo ? endpoint+'/photos/'+p.id : productIllustration(p)}" alt="${p.has_photo ? escape(p.name) : 'Иллюстрация категории товара'}" loading="lazy"><div class="product-info"><span class="product-category">${categoryLabels[categoryOf(p)]}</span><h3>${escape(p.name)}</h3><div class="row"><b class="product-price">${money(p.price)}</b>${p.discount ? `<del class="muted">${money(p.original_price)}</del>` : ''}</div><button data-add="${p.id}" ${p.in_stock ? '' : 'disabled'}>${p.in_stock ? 'Добавить' : 'Нет в наличии'}</button></div></article>`).join('') || '<p>Ассортимент скоро появится.</p>'}</div><p id="catalog-empty" class="empty-state" hidden>Ничего не найдено. Попробуйте другой запрос.</p></section>
+    ${products.map(p => `<article class="panel product-card${p.in_stock?'':' is-unavailable'}" data-product="${p.id}">${p.discount ? `<span class="discount-badge">−${p.discount}%</span>` : ''}<img class="product-photo" src="${p.has_photo ? endpoint+'/photos/'+p.id : productIllustration(p)}" alt="${p.has_photo ? escape(p.name) : 'Иллюстрация категории товара'}" loading="lazy"><div class="product-info"><span class="product-category">${categoryLabels[categoryOf(p)]}</span><h3>${escape(p.name)}</h3><div class="row"><b class="product-price">${money(p.price)}</b>${p.discount ? `<del class="muted">${money(p.original_price)}</del>` : ''}</div>${p.variants?'<label class="variant-picker">Вариант<select data-variant="'+p.id+'">'+p.variants.split('|').filter(Boolean).map(v=>'<option>'+escape(v)+'</option>').join('')+'</select></label>':''}<button data-add="${p.id}" ${p.in_stock ? '' : 'disabled'}>${p.in_stock ? 'Добавить' : 'Нет в наличии'}</button></div></article>`).join('') || '<p>Ассортимент скоро появится.</p>'}</div><p id="catalog-empty" class="empty-state" hidden>Ничего не найдено. Попробуйте другой запрос.</p></section>
     <form class="panel cart-panel" id="checkout"><h2>Ваша корзина</h2><div id="cart-items"></div>
     <p class="row cart-total"><b>Итого</b><strong id="total"></strong></p><label>Имя для выдачи<input name="name" maxlength="60" autocomplete="given-name" placeholder="Как к вам обращаться?" required></label>
-    <button id="submit-request">Отправить заявку</button><p class="cart-caption">Самовывоз после подтверждения готовности.</p></form></div><button type="button" class="mobile-cart" id="mobile-cart" hidden></button>`;
+    <label>Способ получения<select name="fulfillment" id="fulfillment"><option value="pickup">Самовывоз</option>${store.delivery_enabled?'<option value="delivery">Запрос доставки</option>':''}</select></label><label>Телефон или контакт<input name="contact" maxlength="120" autocomplete="tel"></label><label id="delivery-field" hidden>Адрес доставки<input name="deliveryAddress" maxlength="240" autocomplete="street-address"></label><label>Комментарий<textarea name="comment" maxlength="500" rows="3" placeholder="Пожелания к заявке"></textarea></label><p id="delivery-caption" class="muted" hidden>Это запрос доставки. Магазин согласует стоимость и время отдельно. Итог ниже — только товары.</p><button id="submit-request">Отправить заявку</button><p class="cart-caption">Самовывоз после подтверждения готовности.</p></form></div><button type="button" class="mobile-cart" id="mobile-cart" hidden></button>`;
   let category = 'all';
   const search = document.querySelector('#catalog-search');
   function filterCatalog() {
@@ -535,6 +539,9 @@ async function storefront(slug) {
   search.addEventListener('input',filterCatalog);
   for (const button of document.querySelectorAll('[data-category]')) button.addEventListener('click',()=>{category=button.dataset.category;for(const item of document.querySelectorAll('[data-category]'))item.setAttribute('aria-pressed',String(item===button));filterCatalog();});
   document.querySelector('#mobile-cart').addEventListener('click',()=>document.querySelector('#checkout').scrollIntoView({behavior:'smooth',block:'start'}));
+  const deliverySelect=document.querySelector('#fulfillment');
+  deliverySelect.addEventListener('change',()=>{const delivery=deliverySelect.value==='delivery';document.querySelector('#delivery-field').hidden=!delivery;document.querySelector('#delivery-caption').hidden=!delivery;document.querySelector('[name=deliveryAddress]').required=delivery;document.querySelector('[name=contact]').required=delivery;});
+  for(const select of document.querySelectorAll('[data-variant]')){selectedVariants.set(Number(select.dataset.variant),select.value);select.addEventListener('change',()=>{selectedVariants.set(Number(select.dataset.variant),select.value);renderCart();});}
   renderCart();
   for (const button of document.querySelectorAll('[data-add]')) button.addEventListener('click',() => {
     if (document.querySelector('#checkout').dataset.busy) return;
@@ -545,7 +552,7 @@ async function storefront(slug) {
     notice.textContent = 'Товар добавлен в корзину.';
   });
   handle(document.querySelector('#checkout'),async data => {
-    const order = {name:data.name,items:[...cart].map(([id,qty]) => ({id,qty,price:catalog.find(p=>p.id===id).price}))};
+    const order = {name:data.name,fulfillment:data.fulfillment,contact:data.contact,deliveryAddress:data.deliveryAddress,comment:data.comment,items:[...cart].map(([id,qty]) => ({id,qty,variant:selectedVariants.get(id)||'',price:catalog.find(p=>p.id===id).price}))};
     const current = JSON.stringify(order);
     if (signature !== current) { signature = current; attempt = randomKey(); }
     const result = await api(endpoint+'/requests',{...order,key:attempt});
@@ -556,10 +563,10 @@ async function track(key) {
   stopUpdates();
   const order = await api('/api/track/'+key);
   page.innerHTML = `<section class="hero"><p>${escape(order.store)}</p><h1>Заявка № ${order.id}</h1><p>${escape(order.address)}</p></section>
-    <section class="panel"><div class="row"><h2>Самовывоз</h2><span id="tracking-status" class="pill">${labels[order.status]}</span></div>
+    <section class="panel"><div class="row"><h2>${order.fulfillment==='delivery'?'Запрос доставки':'Самовывоз'}</h2><span id="tracking-status" class="pill">${labels[order.status]}</span></div>
     <ul>${list(order.items)}</ul><p><b>${money(order.total)}</b></p>
     <p class="muted">Сохраните ссылку. Статус обновляется автоматически каждые 5 секунд.</p>
-    <button id="refresh" class="secondary" type="button">Обновить статус</button>
+    ${order.delivery_address?'<p>Адрес доставки: '+escape(order.delivery_address)+'</p>':''}${order.comment?'<p>Ваш комментарий: '+escape(order.comment)+'</p>':''}<p id="store-response">${order.staff_note?'Ответ магазина: '+escape(order.staff_note):''}</p><button id="refresh" class="secondary" type="button">Обновить статус</button>
     <p id="tracking-feedback" class="muted" role="status" hidden></p></section>`;
   const button = document.querySelector('#refresh');
   const status = document.querySelector('#tracking-status');
@@ -581,6 +588,7 @@ async function track(key) {
         ? `Статус не изменился. Проверено в ${checkedAt}.`
         : `Статус обновлён — «${label}». Проверено в ${checkedAt}.`;
       status.textContent = label;
+      document.querySelector('#store-response').textContent=latest.staff_note?'Ответ магазина: '+latest.staff_note:'';
       currentStatus = latest.status;
     } catch (error) {
       feedback.textContent = `Не удалось обновить статус. ${error.message}`;

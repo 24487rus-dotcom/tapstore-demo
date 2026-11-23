@@ -1,4 +1,12 @@
 const DEMO_BASE=new URL('.',import.meta.url).pathname;
+import {validateCatalogImport} from './catalog-csv.js';
+function deliveryQuote(store,fulfillment,subtotal,zone='') {
+ if(fulfillment!=='delivery')return {fee:0,zone:''};
+ if(!store.delivery_enabled)throw Object.assign(new Error('Доставка выключена'),{status:400});
+ const zones=String(store.delivery_zones||'').split('|').filter(Boolean);if(zones.length&&!zones.includes(zone))throw Object.assign(new Error('Выберите зону доставки'),{status:400});
+ const minimum=Number(store.delivery_minimum||0);if(subtotal<minimum)throw Object.assign(new Error('Минимальная сумма товаров для доставки: '+minimum+' ₽'),{status:400});
+ return {fee:store.delivery_free_from>0&&subtotal>=store.delivery_free_from?0:Number(store.delivery_fee||0),zone};
+}
 const storageKey = 'tapstore-public-demo-v1';
 const today = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const roles = {owner:'Владелец',seller:'Сотрудник',buyer:'Покупатель'};
@@ -22,14 +30,12 @@ function seed() {
       {id:3,slug:'demo',name:'Покупатель',status:'completed',created,completed_at:created,buyer_email:'buyer@demo.example',items:[{name:'Ореховый микс',price:247,qty:2}],total:494}],
     entries:[{id:1,slug:'demo',kind:'expense',amount:18000,category:'Закупки',note:'Демонстрационная закупка',date:today(),key:'seed'}],nextProduct:5,nextOrder:4,nextEntry:2};
 }
-function read() {
+function read(localStorage = globalThis.localStorage) {
   const value = localStorage.getItem(storageKey);
-  if (!value) { const state=seed(); save(state); return state; }
-  const state=JSON.parse(value);
-  if(!state.deliveryDemoRevision){const demo=state.stores.find(store=>store.slug==='demo');if(demo)demo.delivery_enabled=1;state.deliveryDemoRevision=1;save(state);}
-  return state;
+  if (!value) { const state=seed(); save(state,localStorage); return state; }
+  const state=JSON.parse(value);if(!state.deliveryDemoRevision){const shop=state.stores.find(s=>s.slug==='demo');if(shop)shop.delivery_enabled=1;state.deliveryDemoRevision=1;save(state,localStorage);}return state;
 }
-function save(state) {
+function save(state,localStorage = globalThis.localStorage) {
   try { localStorage.setItem(storageKey,JSON.stringify(state)); }
   catch { throw new Error('В браузере недостаточно места. Уменьшите фотографии или сбросьте демо.'); }
 }
@@ -37,14 +43,15 @@ function fail(message,status=400) { throw Object.assign(new Error(message),{stat
 const salePrice = product => Math.max(1,Math.round(product.price*(100-product.discount)/100));
 const safe = value => String(value ?? '').trim();
 const nextId = rows => Math.max(0,...rows.map(row => row.id))+1;
-export async function demoApi(input,data) {
+export async function demoApi(input,data,context = {}) {
+  const location=context.location || globalThis.location,sessionStorage=context.sessionStorage || globalThis.sessionStorage;
   const url = new URL(input,location.origin), route=url.pathname;
-  const state=read(), role=sessionStorage.getItem('tapstore-demo-role');
+  const state=read(context.localStorage), role=sessionStorage.getItem('tapstore-demo-role');
   const user=state.accounts.find(account => account.role === role && account.email === (sessionStorage.getItem('tapstore-demo-email') || role+'@demo.example') && account.enabled);
   const storeSlug = url.searchParams.get('store') || user?.slug || 'demo';
   const store=state.stores.find(store => store.slug === storeSlug);
   state.moves ||= [];state.invoices ||= [];state.tickets ||= [];
-  const write = value => { save(state); return value; };
+  const write = value => { save(state,context.localStorage); return value; };
   if(route === '/api/session') return {account:user || null};
   if(route === '/api/logout') { sessionStorage.removeItem('tapstore-demo-role');sessionStorage.removeItem('tapstore-demo-email');return {ok:true}; }
   if(route === '/api/login' || route.startsWith('/api/register')) {
@@ -76,7 +83,8 @@ export async function demoApi(input,data) {
       if(product.stock_qty!=null){if(product.stock_qty-(product.reserved_qty||0)<item.qty)fail('Недостаточно товара на складе',409);product.reserved_qty=(product.reserved_qty||0)+item.qty;}
       return {id:item.id,name:product.name+(variant?' · '+variant:''),variant,price:salePrice(product),qty:item.qty};
     });
-    const order={id:state.nextOrder++,key:data.key,slug:shop[1],name:data.name,fulfillment,contact:safe(data.contact).slice(0,120),delivery_address:safe(data.deliveryAddress).slice(0,240),comment:safe(data.comment).slice(0,500),status:'new',created:new Date().toISOString(),items,total:items.reduce((total,item) => total+item.price*item.qty,0),buyer_email:user?.role === 'buyer' ? user.email : null};
+    const subtotal=items.reduce((n,i)=>n+i.price*i.qty,0),shipping=deliveryQuote(currentStore,fulfillment,subtotal,safe(data.deliveryZone));
+    const order={subtotal,delivery_fee:shipping.fee,delivery_zone:shipping.zone,id:state.nextOrder++,key:data.key,slug:shop[1],name:data.name,fulfillment,contact:safe(data.contact).slice(0,120),delivery_address:safe(data.deliveryAddress).slice(0,240),comment:safe(data.comment).slice(0,500),status:'new',created:new Date().toISOString(),items,total:subtotal+shipping.fee,buyer_email:user?.role === 'buyer' ? user.email : null};
     state.requests.push(order);return write({id:order.id,key:order.key});
   }
   const track=route.match(/^\/api\/track\/([a-f0-9]+)$/);
@@ -95,6 +103,7 @@ export async function demoApi(input,data) {
     if(state.stores.some(store => store.slug === data.slug)) fail('Этот адрес занят');
     state.stores.push({slug:data.slug,name:data.name,address:'',published:0});return write({slug:data.slug});
   }
+  if(!store&&route==='/api/manage'&&user.role==='owner')return {account:user,store:null,stores:state.stores,products:[],requests:[],staff:[]};
   if(!store) fail('Магазин не найден',404);
   const products=state.products.filter(product => product.slug === storeSlug && !product.archived);
   const orders=state.requests.filter(order => order.slug === storeSlug);
@@ -120,7 +129,9 @@ export async function demoApi(input,data) {
   if(status) {
     const order=orders.find(order => order.id === Number(status[1]));
     if(!order || order.status !== data.previous) fail('Обновите список заявок',409);
-    if(['completed','cancelled'].includes(data.status))for(const item of order.items){const product=products.find(p=>p.id===item.id);if(product?.stock_qty!=null){product.reserved_qty=Math.max(0,(product.reserved_qty||0)-item.qty);if(data.status==='completed'){product.stock_qty-=item.qty;state.moves.push({id:nextId(state.moves),slug:storeSlug,product_id:product.id,kind:'shipment',qty:item.qty,note:'Заявка № '+order.id,created:new Date().toISOString()});}}}
+    const next={new:'accepted',accepted:'ready',ready:order.fulfillment==='delivery'?'enroute':'completed',enroute:'completed'};
+    if(!next[order.status]||(data.status!==next[order.status]&&(data.status!=='cancelled'||order.status==='enroute')))fail('Недопустимый переход статуса');
+    if(data.status==='enroute'||data.status==='cancelled'||(data.status==='completed'&&data.previous!=='enroute'))for(const item of order.items){const product=products.find(p=>p.id===item.id);if(product?.stock_qty!=null){product.reserved_qty=Math.max(0,(product.reserved_qty||0)-item.qty);if(['completed','enroute'].includes(data.status)){product.stock_qty-=item.qty;state.moves.push({id:nextId(state.moves),slug:storeSlug,product_id:product.id,kind:'shipment',qty:item.qty,note:'Заявка № '+order.id,created:new Date().toISOString()});}}}
     order.staff_note=safe(data.note).slice(0,500);order.status=data.status;if(data.status === 'completed') order.completed_at=new Date().toISOString();
     return write({ok:true});
   }
@@ -135,6 +146,12 @@ export async function demoApi(input,data) {
   if(route === '/api/manage/products/remove') {
     const product=products.find(product => product.id === data.id);if(!product) fail('Товар не найден',404);
     product.archived=1;product.active=0;return write({ok:true});
+  }
+  if(route === '/api/manage/import') {
+    if(user.role!=='owner')fail('Доступно владельцу',403);
+    let rows;try{rows=validateCatalogImport(data.products,products);}catch(error){fail(error.message);}
+    for(const item of rows)state.products.push({...item,id:state.nextProduct++,slug:storeSlug});
+    return write({count:rows.length});
   }
   if(route === '/api/manage/products') {
     let product=products.find(product => product.id === data.id);
@@ -151,7 +168,7 @@ export async function demoApi(input,data) {
     return write({ok:true,id:product.id});
   }
   if(user.role !== 'owner') fail('Доступно владельцу',403);
-  if(route === '/api/manage/store') {if(data.published && !data.address) fail('Укажите адрес самовывоза');Object.assign(store,{name:data.name,address:data.address,description:safe(data.description).slice(0,600),contact:safe(data.contact).slice(0,120),hours:safe(data.hours).slice(0,180),requisites:safe(data.requisites).slice(0,1200),template:['sky','lavender'].includes(data.template)?data.template:'sky',delivery_enabled:Number(data.deliveryEnabled===true),published:Number(data.published)});return write({ok:true});}
+  if(route === '/api/manage/store') {for(const field of ['delivery_fee','delivery_minimum','delivery_free_from'])if(data[field]!==undefined&&(!Number.isInteger(data[field])||data[field]<0||data[field]>1000000))fail('Проверьте условия доставки');if(data.published && !data.address) fail('Укажите адрес самовывоза');Object.assign(store,{name:data.name,address:data.address,description:safe(data.description).slice(0,600),contact:safe(data.contact).slice(0,120),hours:safe(data.hours).slice(0,180),requisites:safe(data.requisites).slice(0,1200),template:['sky','lavender'].includes(data.template)?data.template:'sky',delivery_fee:Number(data.delivery_fee||0),delivery_minimum:Number(data.delivery_minimum||0),delivery_free_from:Number(data.delivery_free_from||0),delivery_zones:safe(data.delivery_zones).split('|').map(v=>v.trim().slice(0,60)).filter(Boolean).slice(0,8).join('|'),delivery_enabled:Number(data.deliveryEnabled===true),published:Number(data.published)});return write({ok:true});}
   if(route === '/api/manage/staff') {
     if(state.accounts.some(account => account.email === data.email)) fail('Эта почта уже используется');
     state.accounts.push({email:data.email,role:'seller',slug:storeSlug,enabled:1,can_edit_prices:Number(data.canEditPrices)});return write({ok:true});

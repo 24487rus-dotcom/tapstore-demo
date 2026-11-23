@@ -7,6 +7,26 @@ export function displayMoney(rubles) {
   return new Intl.NumberFormat(demoLocale,{style:'currency',currency,minimumFractionDigits:currency === 'RUB' ? 0 : 2,maximumFractionDigits:2}).format(rubles/rates[currency]);
 }
 const dictionary = Object.fromEntries(`
+Передан курьеру|Handed to courier
+Передать курьеру|Hand to courier
+Подтвердить доставку|Confirm delivery
+Готова к отправке|Ready to dispatch
+Доставлен|Delivered
+В доставке|Out for delivery
+Стоимость доставки, ₽|Delivery fee, RUB
+Минимальная сумма товаров, ₽|Minimum merchandise subtotal, RUB
+Бесплатная доставка от, ₽|Free delivery from, RUB
+Зоны доставки через вертикальную черту|Delivery zones separated by a vertical bar
+Зона доставки|Delivery zone
+Выберите зону|Select a zone
+Назвать магазин|Name your store
+Настроить получение заказа|Set up fulfillment
+Указать контакты и часы работы|Add contact details and opening hours
+Скачать CSV / шаблон|Download CSV / template
+Загрузить CSV|Upload CSV
+Доставка:|Delivery:
+Товары:|Merchandise:
+Минимум товаров:|Minimum subtotal:
 TAPSTORE ДЛЯ НЕБОЛЬШОГО БИЗНЕСА|TAPSTORE FOR SMALL BUSINESS
 Ваш бизнес онлайн.|Your business online.
 Всё под рукой.|Everything in one place.

@@ -7,6 +7,19 @@ export function displayMoney(rubles) {
   return new Intl.NumberFormat(demoLocale,{style:'currency',currency,minimumFractionDigits:currency === 'RUB' ? 0 : 2,maximumFractionDigits:2}).format(rubles/rates[currency]);
 }
 const dictionary = Object.fromEntries(`
+TAPSTORE ДЛЯ НЕБОЛЬШОГО БИЗНЕСА|TAPSTORE FOR SMALL BUSINESS
+Ваш бизнес онлайн.|Your business online.
+Всё под рукой.|Everything in one place.
+Витрина, товары и заявки в одном понятном кабинете. Больше внимания покупателям, меньше повседневной рутины.|Your storefront, products and requests in one simple workspace. More time for customers, less routine work.
+Войти в кабинет|Sign in
+Посмотреть витрину|View storefront
+Обзор магазина|Store overview
+Пример интерфейса|Interface preview
+Заявки за неделю|Requests this week
+Выдано заказов|Collected orders
+Иллюстративные данные, не показатели реального бизнеса|Illustrative data, not actual business results
+Иллюстрация графика заявок|Illustrative request chart
+К выдаче|Ready for pickup
 Все товары|All products
 Закуски|Snacks
 Напитки|Drinks
